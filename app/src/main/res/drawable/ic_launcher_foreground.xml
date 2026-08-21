@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Sharp tip / spike -->
+    <path android:pathData="M54,16 L59,32 L49,32 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="16"
+                android:endX="54" android:endY="32">
+                <item android:offset="0" android:color="#FFE0A0" />
+                <item android:offset="1" android:color="#FF9A2E" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Layered pyramid body -->
+    <path android:pathData="M54,24 L82,86 L26,86 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54" android:startY="24"
+                android:endX="54" android:endY="86">
+                <item android:offset="0" android:color="#FFCE7A" />
+                <item android:offset="0.55" android:color="#F38A12" />
+                <item android:offset="1" android:color="#DC6400" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Seams between stacked layers -->
+    <path android:fillColor="#33000000" android:pathData="M48.6,35 H59.4 V37 H48.6 Z" />
+    <path android:fillColor="#33000000" android:pathData="M43.2,47 H64.8 V49 H43.2 Z" />
+    <path android:fillColor="#33000000" android:pathData="M37.7,59 H70.3 V61 H37.7 Z" />
+    <path android:fillColor="#33000000" android:pathData="M32.3,71 H75.7 V73 H32.3 Z" />
+    <path android:fillColor="#33000000" android:pathData="M28.7,79 H79.3 V81 H28.7 Z" />
+
+    <!-- Soft left-edge highlight for a glassy feel -->
+    <path android:fillColor="#33FFFFFF" android:pathData="M54,24 L57,30 L40,86 L34,86 Z" />
+</vector>

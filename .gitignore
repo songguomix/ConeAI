@@ -1,0 +1,35 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# IDE
+.idea/
+*.iml
+.claude/
+.kotlin/
+.vscode/
+
+# Local config
+local.properties
+
+# OS
+.DS_Store
+
+# Build outputs
+*.apk
+*.aab
+.externalNativeBuild/
+.cxx/
+captures/
+
+# Signing
+*.keystore
+*.jks
+*.p12
+*.bks
+keystore.properties
+
+# Vosk model (65MB) — ./setup.sh downloads it, do not commit
+app/src/main/assets/vosk-model/*
+!app/src/main/assets/vosk-model/README.md

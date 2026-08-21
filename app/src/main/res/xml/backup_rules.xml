@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Never back up the encrypted key store database to the cloud. -->
+    <exclude domain="database" path="cone-agent.db" />
+    <exclude domain="sharedpref" path="cone_secure_prefs.xml" />
+</full-backup-content>

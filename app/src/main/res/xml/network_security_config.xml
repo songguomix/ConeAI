@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Permit cleartext (http://) traffic app-wide — required for local model providers (Ollama /
+  LM Studio / vLLM), which are commonly served over http on localhost or a LAN IP; Android 9+
+  would otherwise block those connections. This config cannot be narrowed to "private addresses
+  only": network-security-config has no CIDR/wildcard-IP support.
+
+  The actual secrecy invariant is enforced in code instead: CleartextCredentialGuard (a network
+  interceptor on the shared OkHttp client) refuses to send Authorization / x-api-key /
+  x-remote-pass headers over http to any *public* resolved address. So cleartext to the user's
+  own machine/LAN keeps working, while an API key can never leave for the internet unencrypted.
+
+  The desktop-remote pairing uses HTTPS (TLS, pinned self-signed cert — see RemoteTls) and does
+  not rely on cleartext.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Always-on wake-word listener runs as a microphone foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Voice input for the assistant popup. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Scan the ConeCode desktop's pairing QR to connect the remote-control screen, and the
+         watch's pairing QR in 配置手表端. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- 配置手表端 listens for the watch's UDP announcement on the LAN; some ROMs only deliver
+         broadcast frames while a multicast lock is held, which needs these. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Many Chinese ROMs (MIUI / ColorOS / OriginOS / HarmonyOS …) gate the installed-app list
+         behind this runtime permission ("获取应用列表"). Undefined on stock Android, where the
+         <queries> declarations below already cover us, so declaring it is harmless there. -->
+    <uses-permission android:name="com.android.permission.GET_INSTALLED_APPS" />
+    <!-- The agent's alarm/timer interface (AlarmClock.ACTION_SET_ALARM with SKIP_UI); a normal,
+         auto-granted permission. -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- 写代码 keeps its projects in a real folder on shared storage (default /ConeAI) so the code
+         can be opened in a file manager and copied to a computer, and so the in-app web preview can
+         load a page over file:// with its relative CSS/JS intact. Scoped storage leaves no other way
+         to write a user-visible folder the user themselves picked: SAF hands back content:// URIs,
+         which break both of those. Granted by the user in system settings, never at runtime. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Android 11+ package visibility. Scoped <queries> instead of the Play-restricted
+         QUERY_ALL_PACKAGES: open_app() only ever launches *launchable* apps, so seeing every
+         MAIN/LAUNCHER activity is exactly the visibility it needs, no more. -->
+    <queries>
+        <!-- Speech-recognition engines, so the assistant can enumerate and bind a working recognizer. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <!-- Every launchable app: resolved by InstalledAppsProvider (the open_app catalogue sent to
+             the model) and ActionExecutor.resolveLaunchIntent. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Text-share targets (微信 / QQ / …): resolved by ActionExecutor.share() so the agent can
+             hand composed text to a messenger through the system share interface. -->
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".ConeApplication"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ConeAgent"
+        tools:targetApi="35">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.ConeAgent">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Built-in Bing-first browser (viewed by the user; also opened by open_browser). -->
+        <activity
+            android:name=".ui.BrowserActivity"
+            android:exported="false"
+            android:label="@string/browser_title"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.ConeAgent" />
+
+        <!-- Accessibility service: the "hands" of the agent (gestures, UI tree). -->
+        <service
+            android:name=".vision.ConeAccessibilityService"
+            android:exported="false"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+        <!-- Foreground service holding the MediaProjection session (the "eyes"). -->
+        <service
+            android:name=".vision.ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- Foreground service that owns the running Agent loop. -->
+        <service
+            android:name=".service.AgentForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs the on-device AI agent automation loop requested by the user." />
+        </service>
+
+        <!-- Overlay service drawing the floating control center. -->
+        <service
+            android:name=".service.FloatingControlService"
+            android:exported="false" />
+
+        <!-- Always-on "Hey pine cone" / "松果" wake-word listener (on-device, mic foreground service). -->
+        <service
+            android:name=".service.WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Digital-assistant entry point (selectable as the default assistant, summoned by the
+             assist gesture / long-press power). -->
+        <service
+            android:name=".assistant.ConeVoiceInteractionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+        </service>
+
+        <service
+            android:name=".assistant.ConeVoiceInteractionSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- Stub recognition service required by the voice-interaction manifest declaration. -->
+        <service
+            android:name=".assistant.ConeRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
+
+        <!-- Assistant popup UI (pill + voice + answers). Hosted in a translucent Activity so speech
+             recognition can actually record (it fails from inside the voice session on many devices)
+             and so the soft keyboard can push the pill up. -->
+        <activity
+            android:name=".assistant.AssistantActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.Cone.Transparent" />
+
+        <!-- Shares captured-photo files with the system camera (for "take photo" attachments). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Invisible bridge: assistant transcript -> screen capture -> start agent. -->
+        <activity
+            android:name=".assistant.AssistantLauncherActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Cone.Transparent" />
+
+        <!-- 模型自主判断需要读屏时的按需授权：request_screen 动作弹出的隐形 MediaProjection 同意页。 -->
+        <activity
+            android:name=".vision.CaptureGrantActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Cone.Transparent" />
+
+        <!-- Portrait QR scanner for the desktop-remote pairing (zxing). -->
+        <activity
+            android:name=".remote.PortraitCaptureActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:stateNotNeeded="true"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+    </application>
+
+</manifest>
