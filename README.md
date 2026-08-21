@@ -131,7 +131,31 @@ app/src/main/java/com/cone/agent/
    ```
 2. 首次同步会自动下载 Gradle、AGP 与依赖（需联网）。
 3. 运行到 Android 8.0 (API 26) 及以上真机（屏幕捕获、麦克风等能力在模拟器上受限）。
-4. 语音识别默认优先系统识别（更准）；离线兜底需要在 `app/src/main/assets/vosk-model/` 放入一个 Vosk 模型（`./setup.sh` 会下载中文小模型），无系统识别可用时自动回退到它。
+4. 语音识别默认优先系统识别（更准）；离线 Vosk 模型为可选兜底，见下方「离线语音模型」一节。
+
+### 离线语音模型（可选）/ Offline Speech Model (Optional)
+
+应用已将 `vosk-model` 从仓库中移除（约 65MB），克隆后按需一键下载：
+
+```bash
+./setup.sh --no-build              # 仅下载中文模型
+./setup.sh --no-build --model en   # 下载英文模型
+./setup.sh                         # 下载中文模型 + 编译 Release APK
+MODEL_URL=<url> ./setup.sh --no-build  # 自定义模型地址
+```
+
+- 手动下载：https://alphacephei.com/vosk/models （选 `vosk-model-small-cn-0.22.zip` 或 `vosk-model-small-en-us-0.15.zip`），解压后将内容放入 `app/src/main/assets/vosk-model/` 使其包含 `conf/` `am/` `graph/`。
+- 无模型时不影响编译与运行，无可用系统识别时才会回退到离线模型。
+
+The `vosk-model` (~65 MB) is gitignored. After cloning, download on demand:
+
+```bash
+./setup.sh --no-build              # Chinese model only
+./setup.sh --no-build --model en   # English model
+```
+
+- Manual: download from https://alphacephei.com/vosk/models and extract into `app/src/main/assets/vosk-model/` so that `conf/` `am/` `graph/` exist.
+- Building and running work without a model; offline Vosk is only a fallback when system STT is unavailable.
 
 ### 首次使用前的环境准备（应用内「权限与环境」页一键引导）
 
