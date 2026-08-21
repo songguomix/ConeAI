@@ -92,6 +92,47 @@ ML Kit OCR · Vosk（离线语音识别）· Android TextToSpeech · DataStore
 
 ---
 
+## ConeSearch 搜索（混合检索引擎）/ Hybrid Search
+
+> 本项目内置自研 `ConeSearch`：**本地 FTS 优先 + Bing 联网兜底** 的 RAG 检索引擎，为 Agent/问答的 `web_search` / `fetch` / `index_url` 三工具提供上下文。
+
+```
+query → parseQuery → FTS召回(60~400) → 8信号重排 → MMR去重 → Token预算打包 → Context
+                                    ↗ Bing优先，失败回退本地；成功则反向入库
+```
+
+#### 1. 存储 `search/db`
+- `search_documents`: `url(normalized)` 去重、`contentHash(sha256[32])` 增量、`quality/tokenCount/publishedAt`
+- `search_chunks`: `ordinal/anchor/headingPath/content/simhash(64bit)` 外键级联
+- `search_chunks_fts(Fts4)`: `tok(heading+content) / titleTok / urlTok` 仅存分词字符串
+
+#### 2. 入库 `extract/` + `index/SearchIndexer`
+- **HtmlExtract**: 正则抽 `title/desc/og:site_name/lang/canonical/published`，`htmlToMarkdown` (`h1→#`/`pre→``` `/a→[]()`)，`computeQuality` 初始0.35，>200/600token +0.1，含`##`/` ``` `+0.05
+- **Chunk**: `target420/max900/min60/overlap40 token`，按 `heading/code/table/paragraph` 维护 `headingStack→headingPath`，`slugify→anchor`，超长段落按句切，`simhash` 去重
+- **Indexer**: `normalizeUrl` 去`www`/`utm`并排序query，hash一致仅更新，否则删旧chunks/fts后 `toIndexString→insertFts`
+
+#### 3. 查询 `SearchQuery`
+抽 `"phrase"`、`site:/filetype:/after:/before:` (支持 `7d/2w`→Instant)、`-negation`，`tokenize(unigrams=false)` 得 `terms`，`buildMatchExpression` 产 `"(phrase token + token) AND (term OR …)"` 经 `ftsQuote` 防注入
+
+#### 4. 8信号重排 `SearchRank` (权重)
+`lexical1.0(BM25归一)` + `coverage0.85` + `proximity0.35(跨度)` + `heading0.4` + `quality0.3` + `substance0.55(标题占比/纯链接/代码块)` + `freshness0.25(exp(-days/520))` + `position0.15`，短块<40token-0.35，phrase未命中-1.2，negation命中-1.5
+
+#### 5. MMR 多样化 `diversify(λ=0.35)`
+`perDocument2/perHost4`，`hammingDistance≤6` 判近重复丢弃，`mmr=(1-λ)*score - λ*maxSim*2` 贪心选 `limit` 条
+
+#### 6. 预算打包 `SearchBudget`
+`perFloor88`，`affordable=min(n,maxTokens/88)`，`w=1/√rank*max(0.15,score)` 按比分配 `alloc∈[60,1200]`，`surplus` 二次补 `deficit`，`truncateToTokens` 逐条截断，不足60且被截则停
+
+#### 7. 混合检索 `WebSearchClient`
+1) **Bing优先** `GET bing.com/search?q=` 正则解析 `h2>a`+`p.b_`，后台 `indexUrl` 反向入库 2) 为空才走 `engine.search(SearchParams(8,4000))`；`fetch` 命中DB则 `truncateToTokens` 否则 `fetchHtml→extract`
+
+#### 8. 文本基建 `text/`
+`tokenize`: NFKC+lower，CJK→bigram(+unigram)，拉丁→`LATIN_WORD`，中英停用词过滤；`estimateTokens`: `cjk*1+hangul*0.8+latin/3.8+digit/2.5`；`truncateToTokens` 二分+句界回退
+
+> 不依赖向量库，纯 FTS+信号+MMR 保证离线可用、0依赖可解释，随搜随建，预算可控。
+
+---
+
 ## 工程结构
 
 ```
