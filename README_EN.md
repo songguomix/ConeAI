@@ -1,5 +1,7 @@
 # ConeAI
 
+MCP servers can be added under **Settings → MCP servers**. Add a Streamable HTTP URL (usually `/mcp`) and optional JSON headers such as `{"Authorization":"Bearer YOUR_TOKEN"}`. Test, edit, enable/disable, or delete servers there. Configuration is encrypted on the device; tools reload on startup and configuration changes for agent and Q&A use. Local stdio commands and legacy SSE endpoints are not supported. Agent tasks continue to exclude general web search.
+
 **An on-device AI Agent + Voice Assistant for Android.**
 
 Two modes and an always-available voice capsule:
@@ -20,7 +22,7 @@ Two modes and an always-available voice capsule:
 - Vision: MediaProjection real-pixel screenshots
 - UI understanding: ML Kit OCR + AccessibilityService tree
 - Actions: open app / tap / double-tap / long-press / input / swipe / scroll / back / home / recents / wait / screenshot
-- **API-first info**: weather / news / exchange rate / crypto / stocks / gold & silver / Wikipedia / holidays / route distance & time / music / lyrics / IP / world time / air quality / books / dictionary — all via free no-key public APIs, fallback to web search on failure
+- **APIs on demand**: weather / news / exchange rate / crypto / stocks / gold & silver / Wikipedia / holidays / route distance & time / music / lyrics / IP / world time / air quality / books / dictionary via task-specific APIs. Agent tasks do not perform general web searches or fall back to web search when an API fails or no shopping app is installed. Q&A web search is unaffected.
 - **Share to message**: send polished text to WeChat / QQ / DingTalk via `ACTION_SEND` intent targeting, no char-by-char typing
 - **One-shot navigation**: "navigate to X" via map URI (Amap/Baidu/Google Maps auto-selected), like a system assistant
 - **On-demand permissions**: tasks like open app / navigate / play music / call need **no** screen capture or Accessibility; agent adapts to granted capabilities
@@ -207,4 +209,3 @@ Then type a task on the home screen.
 - STT is **offline**; web search only when you enable it; wake-word service writes nothing to system log in release builds.
 - API Keys encrypted via Android Keystore, backup rules exclude DB; desktop remote passwords likewise.
 - `<queries>` is restricted (only launchable apps), no `QUERY_ALL_PACKAGES`.
-

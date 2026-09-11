@@ -417,6 +417,8 @@
     <string name="exec_app_not_found">アプリが見つかりません：%1$s</string>
     <string name="exec_open_app_failed">アプリの起動に失敗：%1$s</string>
     <string name="exec_search_missing">検索キーワードがありません</string>
+    <string name="exec_agent_search_disabled">エージェントの実行中はウェブ検索を行いません。必要に応じて専用 API や既存の情報を使い、取得できない場合はその旨を伝えてください。</string>
+    <string name="exec_agent_shopping_unavailable">利用可能なショッピングアプリがありません。ウェブ検索には切り替えません。</string>
     <string name="exec_search_opened">内蔵ブラウザで Bing 検索「%1$s」を開きました。画面を見てください</string>
     <string name="exec_url_missing">URL がありません</string>
     <string name="exec_page_opened">内蔵ブラウザでページ「%1$s」を開きました。画面を見てください</string>
@@ -733,4 +735,19 @@
     <string name="code_hint_answer">上の質問に答える…</string>
     <string name="code_preview_now">プレビュー</string>
     <string name="asst_snip_hint">画面の好きな場所を囲むと質問できます</string>
+    <string name="mcp_title">MCP サービス</string>
+    <string name="mcp_description">タスクや会話に応じて使うツールサービスを追加します。</string>
+    <string name="mcp_add">MCP を追加</string>
+    <string name="mcp_refresh">ツールを更新</string>
+    <string name="mcp_empty">MCP サービスはまだありません。</string>
+    <string name="mcp_tool_count">利用可能なツール：%1$d</string>
+    <string name="mcp_test">接続テスト</string>
+    <string name="mcp_test_success">接続成功：%1$d 個のツール</string>
+    <string name="mcp_delete_confirm">MCP サービス「%1$s」を削除しますか？</string>
+    <string name="mcp_transport_hint">Streamable HTTP の URL（通常は /mcp）に対応。ローカル stdio コマンドと旧 SSE には未対応です。</string>
+    <string name="mcp_name">サービス名</string>
+    <string name="mcp_url">サービス URL</string>
+    <string name="mcp_headers">ヘッダー JSON（任意）</string>
+    <string name="mcp_headers_hint">例：{\"Authorization\":\"Bearer YOUR_TOKEN\"}。設定は端末内で暗号化されます。</string>
+    <string name="mcp_invalid">名前、有効な HTTP(S) URL、文字列のキーと値を持つ JSON ヘッダーを入力してください。</string>
 </resources>

@@ -607,10 +607,10 @@ class AgentController @Inject constructor(
             return ActionOutcome.Rescan
         }
         update { it.copy(status = TaskStatus.RUNNING) }
-        val result = executor.execute(action)
+        val result = executor.execute(action, allowWebSearch = false)
         val tag = if (result.success) str(R.string.tag_ok) else str(R.string.status_failed)
         addLog(Sender.TOOL, "${action.describe(context)} → $tag：${result.message}", isError = !result.success)
-        memory.history.add("第${step + 1}步动作${index + 1}：${action.describe(context)} → $tag")
+        memory.history.add("第${step + 1}步动作${index + 1}：${action.describe(context)} → $tag${if (result.success) "" else "：${result.message}"}")
 
         // 回退：某个动作执行失败后，本批剩余动作赖以成立的画面前提已经不可信（它们假设这一步成功了），
         // 继续盲跑只会在错误的地方点击/输入。作废剩余计划、重新观察，让模型基于失败记录换思路；同时

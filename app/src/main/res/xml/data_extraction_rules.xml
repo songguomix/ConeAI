@@ -3,9 +3,11 @@
     <cloud-backup>
         <exclude domain="database" path="cone-agent.db" />
         <exclude domain="sharedpref" path="cone_secure_prefs.xml" />
+        <exclude domain="file" path="datastore/cone_mcp.preferences_pb" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="cone-agent.db" />
         <exclude domain="sharedpref" path="cone_secure_prefs.xml" />
+        <exclude domain="file" path="datastore/cone_mcp.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

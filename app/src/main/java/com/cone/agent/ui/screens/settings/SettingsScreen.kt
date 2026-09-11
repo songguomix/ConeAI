@@ -110,6 +110,8 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            McpSettingsSection()
+            HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
             Text(stringResource(R.string.settings_agent_model_title), style = MaterialTheme.typography.titleMedium)
             Text(
                 stringResource(R.string.settings_agent_model_desc),

@@ -417,6 +417,8 @@
     <string name="exec_app_not_found">App not found: %1$s</string>
     <string name="exec_open_app_failed">Failed to open app: %1$s</string>
     <string name="exec_search_missing">Missing search query</string>
+    <string name="exec_agent_search_disabled">Web search is disabled during agent tasks. Use task-specific APIs or available information; report unavailable information honestly.</string>
+    <string name="exec_agent_shopping_unavailable">No shopping app is available. Agent tasks do not fall back to web search.</string>
     <string name="exec_search_opened">Opened Bing search \"%1$s\" in the built-in browser; look at the screen</string>
     <string name="exec_url_missing">Missing URL</string>
     <string name="exec_page_opened">Opened \"%1$s\" in the built-in browser; look at the screen</string>
@@ -733,4 +735,19 @@
     <string name="code_hint_answer">Answer the question above…</string>
     <string name="code_preview_now">Preview it</string>
     <string name="asst_snip_hint">Circle anything on screen to ask about it</string>
+    <string name="mcp_title">MCP servers</string>
+    <string name="mcp_description">Add tool servers for agent tasks and Q&amp;A.</string>
+    <string name="mcp_add">Add MCP</string>
+    <string name="mcp_refresh">Refresh tools</string>
+    <string name="mcp_empty">No MCP servers added yet.</string>
+    <string name="mcp_tool_count">%1$d tools available</string>
+    <string name="mcp_test">Test connection</string>
+    <string name="mcp_test_success">Connected: %1$d tools found</string>
+    <string name="mcp_delete_confirm">Delete MCP server “%1$s”?</string>
+    <string name="mcp_transport_hint">Use a Streamable HTTP endpoint (usually ending in /mcp). Local stdio commands and legacy SSE endpoints are not supported.</string>
+    <string name="mcp_name">Server name</string>
+    <string name="mcp_url">Server URL</string>
+    <string name="mcp_headers">Headers JSON (optional)</string>
+    <string name="mcp_headers_hint">Example: {\"Authorization\":\"Bearer YOUR_TOKEN\"}. Configuration is encrypted on this device.</string>
+    <string name="mcp_invalid">Enter a name, a valid HTTP(S) URL, and JSON headers with string keys and values.</string>
 </resources>

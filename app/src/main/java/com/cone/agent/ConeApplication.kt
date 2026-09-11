@@ -8,12 +8,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import com.cone.agent.mcp.McpManager
 import javax.inject.Inject
 
 @HiltAndroidApp
 class ConeApplication : Application() {
 
     @Inject lateinit var chatRepository: dagger.Lazy<ChatRepository>
+    @Inject lateinit var mcpManager: dagger.Lazy<McpManager>
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -28,6 +31,11 @@ class ConeApplication : Application() {
         appScope.launch {
             runCatching {
                 chatRepository.get().startFreshConversation()
+            }
+        }
+        appScope.launch {
+            mcpManager.get().serversFlow.collectLatest {
+                mcpManager.get().refreshAll()
             }
         }
     }

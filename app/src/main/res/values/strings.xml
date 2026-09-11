@@ -418,6 +418,8 @@
     <string name="exec_app_not_found">未找到应用：%1$s</string>
     <string name="exec_open_app_failed">打开应用失败：%1$s</string>
     <string name="exec_search_missing">缺少搜索关键词</string>
+    <string name="exec_agent_search_disabled">智能体工作期间不进行联网搜索。请按需求调用专用接口或使用已有信息；无法获取时如实说明。</string>
+    <string name="exec_agent_shopping_unavailable">未找到可用购物应用，智能体不会自动转为联网搜索。</string>
     <string name="exec_search_opened">已在内置浏览器打开 Bing 搜索「%1$s」，请看屏幕</string>
     <string name="exec_url_missing">缺少网址</string>
     <string name="exec_page_opened">已在内置浏览器打开网页「%1$s」，请看屏幕</string>
@@ -734,4 +736,19 @@
     <string name="code_hint_answer">回答上面的问题…</string>
     <string name="code_preview_now">预览效果</string>
     <string name="asst_snip_hint">在屏幕上圈出任意区域，直接提问</string>
+    <string name="mcp_title">MCP 服务</string>
+    <string name="mcp_description">添加工具服务，供智能体和问答按任务需求调用。</string>
+    <string name="mcp_add">添加 MCP</string>
+    <string name="mcp_refresh">刷新工具</string>
+    <string name="mcp_empty">还没有添加 MCP 服务。</string>
+    <string name="mcp_tool_count">%1$d 个可用工具</string>
+    <string name="mcp_test">测试连接</string>
+    <string name="mcp_test_success">连接成功，发现 %1$d 个工具</string>
+    <string name="mcp_delete_confirm">删除 MCP 服务「%1$s」？</string>
+    <string name="mcp_transport_hint">支持 Streamable HTTP 地址（通常以 /mcp 结尾），暂不支持本地 stdio 命令或旧版 SSE 地址。</string>
+    <string name="mcp_name">服务名称</string>
+    <string name="mcp_url">服务地址</string>
+    <string name="mcp_headers">请求头 JSON（可选）</string>
+    <string name="mcp_headers_hint">例如：{\"Authorization\":\"Bearer YOUR_TOKEN\"}。配置在本机加密保存。</string>
+    <string name="mcp_invalid">请填写名称、有效的 HTTP(S) 地址和字符串键值形式的请求头 JSON。</string>
 </resources>

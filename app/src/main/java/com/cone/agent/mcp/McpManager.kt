@@ -12,6 +12,9 @@ import kotlinx.serialization.json.buildJsonObject
 import okhttp3.OkHttpClient
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 @Singleton
 class McpManager @Inject constructor(
@@ -21,6 +24,13 @@ class McpManager @Inject constructor(
 ) {
     private val _tools = MutableStateFlow<List<McpTool>>(emptyList())
     val toolsFlow: StateFlow<List<McpTool>> = _tools
+    private val _errors = MutableStateFlow<Map<String, String>>(emptyMap())
+    val errors: StateFlow<Map<String, String>> = _errors
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing
+    private val refreshMutex = Mutex()
+    private val clientMutex = Mutex()
+    private val clients = mutableMapOf<McpServerConfig, McpClient>()
 
     val serversFlow: Flow<List<McpServerConfig>> = repository.serversFlow
 
@@ -35,7 +45,7 @@ class McpManager @Inject constructor(
             appendLine("\n【MCP 工具】已连接 ${tools.distinctBy { it.serverId }.size} 个 MCP 服务，可用工具：")
             tools.forEach { appendLine(it.promptLine()) }
             appendLine("调用方式：输出 {\"action\":\"mcp_call\",\"app\":\"serverId\",\"text\":\"toolName {\\\"arg\\\":value}\"}，")
-            appendLine("或问答中输出 {\"tool\":\"mcp_call\",\"query\":\"toolName\",\"app\":\"serverId\"} 附带 JSON 参数。")
+            appendLine("或问答中输出 {\"tool\":\"mcp_call\",\"query\":\"toolName {\\\"arg\\\":value}\",\"app\":\"serverId\"}。")
             appendLine("参数为 JSON 对象，未知则传 {}。执行结果会以【工具结果】回传。")
         }
     }
@@ -53,23 +63,39 @@ class McpManager @Inject constructor(
     suspend fun setEnabled(id: String, enabled: Boolean): Result<Unit> = repository.setEnabled(id, enabled)
 
     suspend fun testConnection(config: McpServerConfig): Result<List<McpToolDefinition>> {
+        config.validate().getOrElse { return Result.failure(it) }
         val client = createClient(config)
         client.initialize().getOrElse { return Result.failure(it) }
         return client.listTools()
     }
 
-    suspend fun refreshAll(): Result<Unit> = runCatching {
-        val servers = repository.getServers().filter { it.enabled }
-        val all = mutableListOf<McpTool>()
-        for (s in servers) {
-            val client = createClient(s)
-            runCatching { client.initialize() }
-            val tools = client.listTools().getOrNull() ?: continue
-            for (def in tools) {
-                all.add(McpTool(s.id, s.name, def.name, def.description, def.inputSchema as? JsonObject))
+    suspend fun refreshAll(): Result<Unit> = refreshMutex.withLock {
+        _refreshing.value = true
+        try {
+            val servers = repository.getServers().filter { it.enabled }
+            clientMutex.withLock { clients.keys.retainAll(servers.toSet()) }
+            _tools.value = emptyList()
+            _errors.value = emptyMap()
+            for (s in servers) {
+                try {
+                    val tools = connectedClient(s).listTools().getOrThrow()
+                    _tools.value += tools.map { def ->
+                        McpTool(s.id, s.name, def.name, def.description, def.inputSchema as? JsonObject)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _errors.value += (s.id to (e.message ?: "Connection failed"))
+                }
             }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            _refreshing.value = false
         }
-        _tools.value = all
     }
 
     suspend fun callTool(serverId: String?, toolName: String, arguments: JsonElement?): Result<String> {
@@ -85,8 +111,13 @@ class McpManager @Inject constructor(
         }
         if (target == null) return Result.failure(IllegalArgumentException("MCP server not found: $serverId"))
         if (!target.enabled) return Result.failure(IllegalStateException("server disabled"))
-        val client = createClient(target)
-        return client.callTool(toolName, arguments)
+        return try {
+            connectedClient(target).callTool(toolName, arguments)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun callToolRaw(serverId: String?, rawText: String?): Result<String> {
@@ -119,6 +150,14 @@ class McpManager @Inject constructor(
     private fun createClient(config: McpServerConfig): McpClient {
         if (config.url.contains("chat/completions", true)) return ChatCompletionsMcpClient(config, okHttp, json)
         return HttpMcpClient(config, okHttp, json)
+    }
+
+    private suspend fun connectedClient(config: McpServerConfig): McpClient = clientMutex.withLock {
+        config.validate().getOrThrow()
+        clients[config] ?: createClient(config).also {
+            it.initialize().getOrThrow()
+            clients[config] = it
+        }
     }
 
     fun parseAndBuildArgs(text: String?, app: String?): Triple<String?, String, JsonElement?> {

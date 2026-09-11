@@ -14,6 +14,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 interface McpClient {
     suspend fun initialize(): Result<McpInitializeResult>
@@ -29,16 +32,21 @@ class HttpMcpClient(
 ) : McpClient {
 
     private val endpoint: String get() = config.url.trim().trimEnd('/')
+    private val wireJson = Json(json) { encodeDefaults = true }
+    private var sessionId: String? = null
+    private var protocolVersion: String? = null
 
     private suspend fun postRpc(request: JsonRpcRequest): Result<JsonRpcResponse> = withContext(Dispatchers.IO) {
         runCatching {
-            val bodyStr = json.encodeToString(request)
+            val bodyStr = wireJson.encodeToString(request)
             val reqBuilder = Request.Builder()
                 .url(endpoint)
                 .post(bodyStr.toRequestBody("application/json".toMediaType()))
                 .header("Accept", "application/json, text/event-stream")
                 .header("Content-Type", "application/json")
             config.headers.forEach { (k, v) -> if (k.isNotBlank() && v.isNotBlank()) reqBuilder.header(k, v) }
+            sessionId?.let { reqBuilder.header("Mcp-Session-Id", it) }
+            protocolVersion?.let { reqBuilder.header("MCP-Protocol-Version", it) }
             val req = reqBuilder.build()
             val client = okHttp.newBuilder()
                 .connectTimeout(10, TimeUnit.SECONDS)
@@ -46,13 +54,34 @@ class HttpMcpClient(
                 .writeTimeout(30, TimeUnit.SECONDS)
                 .build()
             client.newCall(req).execute().use { resp ->
-                val raw = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) error("HTTP ${resp.code}: ${raw.take(500)}")
-                val parsed = parseResponse(raw)
+                if (!resp.isSuccessful) error("HTTP ${resp.code}")
+                resp.header("Mcp-Session-Id")?.let { sessionId = it }
+                val body = resp.body ?: error("empty response")
+                val parsed = if (resp.header("Content-Type").orEmpty().contains("text/event-stream", true)) {
+                    val source = body.source()
+                    val data = StringBuilder()
+                    var matched: JsonRpcResponse? = null
+                    while (matched == null) {
+                        currentCoroutineContext().ensureActive()
+                        val line = source.readUtf8Line() ?: break
+                        if (line.isEmpty()) {
+                            if (data.isNotEmpty()) {
+                                val event = runCatching { json.decodeFromString(JsonRpcResponse.serializer(), data.toString()) }.getOrNull()
+                                if (event?.id == request.id) matched = event
+                                data.setLength(0)
+                            }
+                        } else if (line.startsWith("data:")) {
+                            if (data.isNotEmpty()) data.append('\n')
+                            data.append(line.removePrefix("data:").trimStart())
+                        }
+                    }
+                    matched ?: error("No matching MCP response in stream")
+                } else parseResponse(body.string())
+                check(parsed.id == request.id) { "MCP response ID mismatch" }
                 parsed.error?.let { e -> error("RPC ${e.code}: ${e.message}") }
                 parsed
             }
-        }
+        }.onFailure { if (it is CancellationException) throw it }
     }
 
     private fun parseResponse(raw: String): JsonRpcResponse {
@@ -68,11 +97,29 @@ class HttpMcpClient(
     }
 
     override suspend fun initialize(): Result<McpInitializeResult> = runCatching {
-        val params = json.encodeToJsonElement(McpInitializeParams.serializer(), McpInitializeParams())
+        val params = wireJson.encodeToJsonElement(McpInitializeParams.serializer(), McpInitializeParams())
         val req = McpProtocol.request(McpMethods.INITIALIZE, params)
         val resp = postRpc(req).getOrThrow()
         val result = resp.result ?: error("no result")
-        json.decodeFromJsonElement(McpInitializeResult.serializer(), result)
+        val initialized = json.decodeFromJsonElement(McpInitializeResult.serializer(), result)
+        protocolVersion = initialized.protocolVersion
+        notifyInitialized()
+        initialized
+    }
+
+    private suspend fun notifyInitialized() = withContext(Dispatchers.IO) {
+        val payload = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("method", McpMethods.NOTIFICATION_INITIALIZED)
+        }
+        val request = Request.Builder().url(endpoint)
+            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .header("Accept", "application/json, text/event-stream")
+        config.headers.forEach { (key, value) -> request.header(key, value) }
+        sessionId?.let { request.header("Mcp-Session-Id", it) }
+        protocolVersion?.let { request.header("MCP-Protocol-Version", it) }
+        okHttp.newBuilder().callTimeout(30, TimeUnit.SECONDS).build()
+            .newCall(request.build()).execute().use { check(it.isSuccessful) { "MCP initialization notification HTTP ${it.code}" } }
     }
 
     override suspend fun listTools(): Result<List<McpToolDefinition>> = runCatching {

@@ -39,7 +39,7 @@ class ActionExecutor @Inject constructor(
 
     private fun str(id: Int, vararg args: Any) = LocaleHelper.string(context, id, *args)
 
-    suspend fun execute(action: PlannedAction): ActionResult = when (action.type) {
+    suspend fun execute(action: PlannedAction, allowWebSearch: Boolean = true): ActionResult = when (action.type) {
         ActionType.OPEN_APP -> openApp(action.app)
         ActionType.CLICK -> requireXy(action) { x, y ->
             ActionResult(bridge.click(x, y), str(R.string.act_click, x, y))
@@ -72,9 +72,9 @@ class ActionExecutor @Inject constructor(
         ActionType.HOME -> ActionResult(bridge.home(), str(R.string.act_home))
         ActionType.RECENT_APPS -> ActionResult(bridge.recents(), str(R.string.act_recent))
         ActionType.CAPTURE_SCREEN -> ActionResult(true, str(R.string.exec_capture))
-        ActionType.WEB_SEARCH -> webSearch(action.text)
-        ActionType.OPEN_URL -> readUrl(action.text)
-        ActionType.OPEN_BROWSER -> openBrowser(action.text)
+        ActionType.WEB_SEARCH -> if (allowWebSearch) webSearch(action.text) else searchDisabled()
+        ActionType.OPEN_URL -> readUrl(action.text, allowWebSearch)
+        ActionType.OPEN_BROWSER -> openBrowser(action.text, allowWebSearch)
         ActionType.WEATHER -> {
             val info = dailyInfoService.weather(action.text)
             ActionResult(true, str(R.string.exec_weather_done), observation = info)
@@ -141,7 +141,7 @@ class ActionExecutor @Inject constructor(
         }
         ActionType.NAVIGATE -> navigate(action.text, action.app)
         ActionType.PLAY_MUSIC -> playMusic(action.text, action.app)
-        ActionType.SHOPPING -> shopping(action.text, action.app)
+        ActionType.SHOPPING -> shopping(action.text, action.app, allowWebSearch)
         ActionType.SHARE -> share(action.text, action.app)
         ActionType.CALL -> call(action.text)
         ActionType.SMS -> sms(action.text, action.app)
@@ -180,15 +180,28 @@ class ActionExecutor @Inject constructor(
         return launchBrowser(engine.searchUrl(query), engine) { str(R.string.exec_search_opened, query.trim()) }
     }
 
-    /** Opens the built-in browser on screen at [url] so the agent can read the page from the screen. */
-    private suspend fun readUrl(url: String?): ActionResult {
+    private fun searchDisabled() = ActionResult(false, str(R.string.exec_agent_search_disabled))
+
+    /** Opens a concrete page; agent callers cannot fall back to a keyword search. */
+    private suspend fun readUrl(url: String?, allowWebSearch: Boolean): ActionResult {
         if (url.isNullOrBlank()) return ActionResult(false, str(R.string.exec_url_missing))
+        if (!allowWebSearch) {
+            val target = AgentWebPolicy.directUrl(url) ?: return searchDisabled()
+            return launchBrowser(target, SearchEngine.BING) { str(R.string.exec_page_opened, target) }
+        }
         val engine = searchEngineResolver.resolve()
         return launchBrowser(engine.urlFor(url), engine) { str(R.string.exec_page_opened, url.trim()) }
     }
 
     /** Opens the built-in browser (home, or a query/url) visibly on screen. */
-    private suspend fun openBrowser(queryOrUrl: String?): ActionResult {
+    private suspend fun openBrowser(queryOrUrl: String?, allowWebSearch: Boolean): ActionResult {
+        if (!allowWebSearch) {
+            val target = if (queryOrUrl.isNullOrBlank()) "about:blank"
+                else AgentWebPolicy.directUrl(queryOrUrl) ?: return searchDisabled()
+            return launchBrowser(target, SearchEngine.BING) {
+                str(R.string.act_open_browser, queryOrUrl.orEmpty().take(40))
+            }
+        }
         val engine = searchEngineResolver.resolve()
         return launchBrowser(engine.urlFor(queryOrUrl), engine) {
             str(R.string.act_open_browser, queryOrUrl.orEmpty().take(40))
@@ -407,10 +420,11 @@ class ActionExecutor @Inject constructor(
     /**
      * Jumps straight to a shopping app's search-results page for [query] through its **free URI
      * interface**（淘宝/京东/拼多多）, instead of opening the app and typing into its search box.
-     * Falls back to a built-in-browser web search when no shopping app is installed. Only opens the
+     * Q&A may fall back to browser search when no shopping app is installed; agent tasks may not.
+     * Only opens the
      * results list — any actual 下单/支付 tap later still goes through the high-risk confirmation.
      */
-    private suspend fun shopping(query: String?, appQuery: String?): ActionResult {
+    private suspend fun shopping(query: String?, appQuery: String?, allowWebSearch: Boolean): ActionResult {
         if (query.isNullOrBlank()) return ActionResult(false, str(R.string.exec_shopping_missing))
         val q = query.trim()
         val enc = URLEncoder.encode(q, "UTF-8")
@@ -442,7 +456,8 @@ class ActionExecutor @Inject constructor(
                 return ActionResult(true, str(R.string.act_shopping, pkg, q.take(30)))
             }
         }
-        // No shopping app — search the web in the built-in browser instead.
+        // Search fallback is only available to callers that allow it (not agent tasks).
+        if (!allowWebSearch) return ActionResult(false, str(R.string.exec_agent_shopping_unavailable))
         val engine = searchEngineResolver.resolve()
         return launchBrowser(engine.searchUrl(q), engine) {
             str(R.string.act_shopping, str(R.string.act_default_app), q.take(30))

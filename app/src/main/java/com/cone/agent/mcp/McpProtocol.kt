@@ -33,7 +33,7 @@ data class JsonRpcError(
 
 @Serializable
 data class McpInitializeParams(
-    @SerialName("protocolVersion") val protocolVersion: String = "2024-11-05",
+    @SerialName("protocolVersion") val protocolVersion: String = "2025-03-26",
     val capabilities: JsonObject = buildJsonObject {},
     @SerialName("clientInfo") val clientInfo: McpClientInfo = McpClientInfo(),
 )

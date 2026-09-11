@@ -3,4 +3,5 @@
     <!-- Never back up the encrypted key store database to the cloud. -->
     <exclude domain="database" path="cone-agent.db" />
     <exclude domain="sharedpref" path="cone_secure_prefs.xml" />
+    <exclude domain="file" path="datastore/cone_mcp.preferences_pb" />
 </full-backup-content>
