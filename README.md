@@ -224,3 +224,14 @@ The `vosk-model` (~65 MB) is gitignored. After cloning, download on demand:
 - 语音识别为**本地离线**进行；联网搜索仅在用户开启时发起；语音唤醒在正式包中不向系统日志写入任何听到的内容。
 - API Key 经 Android Keystore 加密，备份规则已排除密钥数据库；桌面遥控密码同样只以 Keystore 密文存储。
 - 应用列举采用受限的 `<queries>` 声明（仅可启动应用），不申请 `QUERY_ALL_PACKAGES`。
+
+---
+
+## 开源协议
+
+本项目基于 [MIT License](./LICENSE) 开源。
+
+Copyright (c) 2026 Pinecone Technology
+
+你可以自由使用、修改、分发本项目（含商业用途），只需在副本或实质性部分中保留上述版权声明与许可声明。软件按「原样」提供，不附带任何形式的担保。
+

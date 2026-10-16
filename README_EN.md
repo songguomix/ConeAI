@@ -209,3 +209,14 @@ Then type a task on the home screen.
 - STT is **offline**; web search only when you enable it; wake-word service writes nothing to system log in release builds.
 - API Keys encrypted via Android Keystore, backup rules exclude DB; desktop remote passwords likewise.
 - `<queries>` is restricted (only launchable apps), no `QUERY_ALL_PACKAGES`.
+
+---
+
+## License
+
+This project is released under the [MIT License](./LICENSE).
+
+Copyright (c) 2026 Pinecone Technology
+
+You are free to use, modify, and distribute this project, including commercially, provided the copyright notice and permission notice are kept in all copies or substantial portions. The software is provided "as is", without warranty of any kind.
+
