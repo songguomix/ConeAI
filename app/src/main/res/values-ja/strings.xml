@@ -72,6 +72,7 @@
     <string name="env_fix">設定する</string>
     <string name="env_pick_model">モデルを選択</string>
     <string name="env_accessibility">アクセシビリティを有効化</string>
+    <string name="env_accessibility_restarting">ユーザー補助サービスを再起動中です。まもなく復帰します</string>
     <string name="env_overlay">オーバーレイを許可</string>
     <string name="env_capture">画面キャプチャを許可</string>
     <string name="model_hint_title">モデルが未選択です</string>
@@ -123,10 +124,10 @@
     <string name="settings_asr_title">カスタム音声認識（ASR）</string>
     <string name="settings_asr_using_system">システムの音声認識を使用中（タップで自分のサービスに変更）</string>
     <string name="settings_asr_using_custom">カスタムサービスを使用中：%1$s</string>
-    <string name="settings_asr_desc">OpenAI の /v1/audio/transcriptions 互換の音声認識サービスを指定します。音声アシスタントと入力欄のマイクで使われます。空欄の場合はシステムの音声認識を使用します。</string>
+    <string name="settings_asr_desc">音声入力に対応したチャットモデル（/v1/chat/completions）を指定します。音声アシスタントと入力欄のマイクで使われます。空欄の場合はシステムの音声認識を使用します。</string>
     <string name="settings_asr_url_label">サービス URL（Base URL）</string>
     <string name="settings_asr_key_label">API キー（省略可）</string>
-    <string name="settings_asr_model_label">モデル名（既定は whisper-1）</string>
+    <string name="settings_asr_model_label">モデル名（既定は gpt-4o-audio-preview、音声入力対応が必要）</string>
     <string name="settings_asr_lang_label">言語コード（空欄で自動判定、例：zh）</string>
     <string name="settings_asr_wake_note">注意：ウェイクワード検出はこのサービスを使いません。常時待ち受けが必要で音声を送信できないため、常に端末内のオフラインモデルで動作します。</string>
     <string name="memory_category_identity">基本情報</string>
@@ -142,10 +143,10 @@
     <string name="settings_tts_title">カスタム音声合成（TTS）</string>
     <string name="settings_tts_using_system">システムの音声合成を使用中（タップで自分のサービスに変更）</string>
     <string name="settings_tts_using_custom">カスタムサービスを使用中：%1$s</string>
-    <string name="settings_tts_desc">OpenAI の /v1/audio/speech 互換の音声合成サービスを指定します。回答の読み上げと音声アシスタントで使われます。空欄の場合は内蔵エンジンを使用します。</string>
+    <string name="settings_tts_desc">音声出力に対応したチャットモデル（/v1/chat/completions）を指定します。回答の読み上げと音声アシスタントで使われます。空欄の場合は内蔵エンジンを使用します。</string>
     <string name="settings_tts_url_label">サービス URL（Base URL）</string>
     <string name="settings_tts_key_label">API キー（省略可）</string>
-    <string name="settings_tts_model_label">モデル名（既定は tts-1）</string>
+    <string name="settings_tts_model_label">モデル名（既定は gpt-4o-audio-preview、音声出力対応が必要）</string>
     <string name="settings_tts_voice_label">音声（既定は alloy）</string>
     <string name="settings_vision_model_title">画面理解モデル</string>
     <string name="settings_vision_model_desc">スクリーンショットを見てテキストで説明します。視覚対応が必要です。</string>
@@ -226,6 +227,7 @@
     <string name="perm_model_desc">エージェントの頭脳。「モデルと設定」でモデルを選択します。</string>
     <string name="perm_a11y_title">2. ユーザー補助サービス</string>
     <string name="perm_a11y_desc">エージェントの「手」。タップ・入力・スワイプや画面構造の読み取りに使います。</string>
+    <string name="perm_a11y_restarting">システム設定では有効済みで、再起動後の再バインド中です。そのままお待ちください。</string>
     <string name="perm_go_enable">有効にする</string>
     <string name="perm_overlay_title">3. オーバーレイ権限</string>
     <string name="perm_overlay_desc">ドラッグ可能なフローティング操作センターを表示し、いつでも一時停止／引き継ぎできます。</string>

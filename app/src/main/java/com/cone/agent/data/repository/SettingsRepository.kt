@@ -24,7 +24,7 @@ data class SelectedAgentModel(
     val modelId: String,
 )
 
-/** A user-supplied text-to-speech endpoint (OpenAI `/v1/audio/speech` compatible). */
+/** A user-supplied text-to-speech endpoint: chat-completions (`/v1/chat/completions`) with audio output. */
 data class TtsConfig(
     val baseUrl: String,
     val apiKey: String,
@@ -32,7 +32,7 @@ data class TtsConfig(
     val voice: String,
 )
 
-/** A user-supplied speech-to-text endpoint (OpenAI `/v1/audio/transcriptions` compatible). */
+/** A user-supplied speech-to-text endpoint: chat-completions (`/v1/chat/completions`) with audio input. */
 data class AsrConfig(
     val baseUrl: String,
     val apiKey: String,
@@ -180,9 +180,9 @@ class SettingsRepository @Inject constructor(
     }
 
     /**
-     * 自定义语音识别（ASR）服务：OpenAI `/v1/audio/transcriptions` 兼容接口。填了地址就用它替代系统
-     * 语音识别，用于语音助手与输入框麦克风。**不影响语音唤醒**——唤醒必须常驻离线、零延迟、不联网，
-     * 那是 Vosk 的职责，与这里无关。
+     * 自定义语音识别（ASR）服务：与聊天接口同形的 `/v1/chat/completions`（需模型支持音频输入）。
+     * 填了地址就用它替代系统语音识别，用于语音助手与输入框麦克风。**不影响语音唤醒**——唤醒必须
+     * 常驻离线、零延迟、不联网，那是 Vosk 的职责，与这里无关。
      */
     val asrConfig: Flow<AsrConfig?> = store.data.map { prefs ->
         val url = prefs[KEY_ASR_BASE_URL]?.trim().orEmpty()
@@ -190,7 +190,7 @@ class SettingsRepository @Inject constructor(
         AsrConfig(
             baseUrl = url,
             apiKey = prefs[KEY_ASR_API_KEY].orEmpty(),
-            model = prefs[KEY_ASR_MODEL]?.trim().orEmpty().ifEmpty { "whisper-1" },
+            model = prefs[KEY_ASR_MODEL]?.trim().orEmpty().ifEmpty { DEFAULT_CHAT_AUDIO_MODEL },
             language = prefs[KEY_ASR_LANGUAGE]?.trim().orEmpty(),
         )
     }
@@ -205,8 +205,8 @@ class SettingsRepository @Inject constructor(
     }
 
     /**
-     * 自定义语音合成（TTS）服务：OpenAI `/v1/audio/speech` 兼容接口。填了地址就用它替代系统 TTS，
-     * 用于问答朗读与语音助手播报。留空则沿用系统自带引擎。
+     * 自定义语音合成（TTS）服务：与聊天接口同形的 `/v1/chat/completions`（需模型支持音频输出）。
+     * 填了地址就用它替代系统 TTS，用于问答朗读与语音助手播报。留空则沿用系统自带引擎。
      */
     val ttsConfig: Flow<TtsConfig?> = store.data.map { prefs ->
         val url = prefs[KEY_TTS_BASE_URL]?.trim().orEmpty()
@@ -214,7 +214,7 @@ class SettingsRepository @Inject constructor(
         TtsConfig(
             baseUrl = url,
             apiKey = prefs[KEY_TTS_API_KEY].orEmpty(),
-            model = prefs[KEY_TTS_MODEL]?.trim().orEmpty().ifEmpty { "tts-1" },
+            model = prefs[KEY_TTS_MODEL]?.trim().orEmpty().ifEmpty { DEFAULT_CHAT_AUDIO_MODEL },
             voice = prefs[KEY_TTS_VOICE]?.trim().orEmpty().ifEmpty { "alloy" },
         )
     }
@@ -327,6 +327,8 @@ class SettingsRepository @Inject constructor(
     }
 
     private companion object {
+        /** Reference chat model with audio input/output, used when the user leaves the model blank. */
+        const val DEFAULT_CHAT_AUDIO_MODEL = "gpt-4o-audio-preview"
         val KEY_PROVIDER_ID = longPreferencesKey("selected_provider_id")
         val KEY_MODEL_ID = stringPreferencesKey("selected_model_id")
         val KEY_CHAT_PROVIDER_ID = longPreferencesKey("chat_provider_id")

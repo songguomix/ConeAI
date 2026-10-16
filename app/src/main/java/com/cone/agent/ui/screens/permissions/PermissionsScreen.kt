@@ -87,7 +87,13 @@ fun PermissionsScreen(
             )
             PermissionItem(
                 title = stringResource(R.string.perm_a11y_title),
-                description = stringResource(R.string.perm_a11y_desc),
+                description = stringResource(
+                    if (env.accessibilityRestarting) {
+                        R.string.perm_a11y_restarting
+                    } else {
+                        R.string.perm_a11y_desc
+                    },
+                ),
                 granted = env.accessibilityReady,
                 actionLabel = stringResource(R.string.perm_go_enable),
                 onAction = systemActions.openAccessibilitySettings,

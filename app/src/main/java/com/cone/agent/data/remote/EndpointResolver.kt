@@ -26,6 +26,22 @@ object EndpointResolver {
         ProviderProtocol.CUSTOM -> baseUrl.trim().trimEnd('/')
     }
 
+    /**
+     * Chat-completions URL for the voice features (ASR/TTS), which also speak OpenAI's
+     * `/v1/chat/completions` wire format instead of the dedicated `/v1/audio/...` endpoints.
+     *
+     * Tolerates whatever the user pasted: a bare host, a `/v1`-style root, a full chat URL, or a
+     * previously-saved `/v1/audio/transcriptions` / `/v1/audio/speech` address (the audio suffix
+     * is stripped back to its version root before resolving).
+     */
+    fun chatCompletionsUrl(baseUrl: String): String {
+        var base = baseUrl.trim().trimEnd('/')
+        if (base.isEmpty()) return base
+        if (base.contains("/audio/transcriptions")) base = base.substringBefore("/audio").trimEnd('/')
+        if (base.contains("/audio/speech")) base = base.substringBefore("/audio").trimEnd('/')
+        return resolve(base, "/chat/completions")
+    }
+
     fun modelsUrl(baseUrl: String, protocol: ProviderProtocol): String = when (protocol) {
         // For a verbatim chat URL, derive the sibling /models endpoint (e.g. .../chat/completions → .../models).
         ProviderProtocol.CUSTOM -> {

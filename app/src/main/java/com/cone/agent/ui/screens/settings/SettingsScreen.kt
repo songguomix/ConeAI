@@ -487,7 +487,7 @@ fun SettingsScreen(
                         if (asrBaseUrl.isBlank()) {
                             stringResource(R.string.settings_asr_using_system)
                         } else {
-                            stringResource(R.string.settings_asr_using_custom, asrModel.ifBlank { "whisper-1" })
+                            stringResource(R.string.settings_asr_using_custom, asrModel.ifBlank { "gpt-4o-audio-preview" })
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -527,7 +527,7 @@ fun SettingsScreen(
                     value = asrModel,
                     onValueChange = { viewModel.setAsrModel(it) },
                     label = { Text(stringResource(R.string.settings_asr_model_label)) },
-                    placeholder = { Text("whisper-1") },
+                    placeholder = { Text("gpt-4o-audio-preview") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
@@ -565,7 +565,7 @@ fun SettingsScreen(
                         if (ttsBaseUrl.isBlank()) {
                             stringResource(R.string.settings_tts_using_system)
                         } else {
-                            stringResource(R.string.settings_tts_using_custom, ttsModel.ifBlank { "tts-1" })
+                            stringResource(R.string.settings_tts_using_custom, ttsModel.ifBlank { "gpt-4o-audio-preview" })
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -605,7 +605,7 @@ fun SettingsScreen(
                     value = ttsModel,
                     onValueChange = { viewModel.setTtsModel(it) },
                     label = { Text(stringResource(R.string.settings_tts_model_label)) },
-                    placeholder = { Text("tts-1") },
+                    placeholder = { Text("gpt-4o-audio-preview") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )

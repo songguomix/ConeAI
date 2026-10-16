@@ -12,17 +12,17 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
  * Records a phrase and transcribes it through the user's own OpenAI-compatible
- * `/v1/audio/transcriptions` endpoint.
+ * `/v1/chat/completions` endpoint (the model must accept audio input, e.g. `gpt-4o-audio-preview`
+ * or any relay that forwards `input_audio` parts).
  *
  * Unlike the platform recognizer this is a *batch* transcriber: audio is captured to a file, then
  * uploaded once the phrase ends, so there are no partial results — the caller sees a single final
@@ -161,15 +161,35 @@ class CustomAsrEngine(
     }
 
     private fun transcribe(file: File): Result<String> = runCatching {
-        val body = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("file", file.name, file.asRequestBody(AUDIO_MEDIA_TYPE))
-            .addFormDataPart("model", config.model)
-            .apply {
-                if (config.language.isNotBlank()) addFormDataPart("language", config.language)
-            }
-            .addFormDataPart("response_format", "json")
-            .build()
+        val audioBytes = file.readBytes()
+        if (audioBytes.size > MAX_AUDIO_BYTES) error("录音过长，服务不接受")
+        val audioBase64 = android.util.Base64.encodeToString(audioBytes, android.util.Base64.NO_WRAP)
+        val langHint = config.language.ifBlank { "auto" }
+        val prompt = "Transcribe the attached speech audio verbatim in its original language " +
+            "(language hint: $langHint). Respond with the transcript text only, no explanations."
+
+        val content = org.json.JSONArray()
+            .put(org.json.JSONObject().put("type", "text").put("text", prompt))
+            .put(
+                org.json.JSONObject().put("type", "input_audio").put(
+                    "input_audio",
+                    org.json.JSONObject()
+                        .put("data", audioBase64)
+                        .put("format", audioFormat(file)),
+                ),
+            )
+        val body = org.json.JSONObject()
+            .put("model", config.model)
+            .put("temperature", 0)
+            .put("max_tokens", 1024)
+            .put(
+                "messages",
+                org.json.JSONArray().put(
+                    org.json.JSONObject().put("role", "user").put("content", content),
+                ),
+            )
+            .toString()
+            .toRequestBody(JSON_MEDIA_TYPE)
 
         val request = Request.Builder()
             .url(transcriptionUrl(config.baseUrl))
@@ -185,12 +205,36 @@ class CustomAsrEngine(
             if (!response.isSuccessful) {
                 error(describeFailure(response.code, raw))
             }
-            // Standard shape is {"text": "..."}; some gateways answer with plain text instead.
-            runCatching { JSONObject(raw).optString("text") }
-                .getOrNull()
-                ?.takeIf { it.isNotBlank() }
-                ?: raw.trim()
+            // Audio-capable chat models answer with plain text; some echo it under message.audio.
+            extractChatText(raw).ifBlank { error("语音识别返回为空") }
         }
+    }
+
+    /**
+     * Pulls the transcript out of a chat-completions answer: prefers `message.audio.transcript`
+     * (audio-preview models), then `message.content` (a string or an array of text parts). Falls
+     * back to the raw body for gateways that answer with plain text.
+     */
+    private fun extractChatText(raw: String): String {
+        val message = runCatching {
+            org.json.JSONObject(raw)
+                .optJSONArray("choices")
+                ?.optJSONObject(0)
+                ?.optJSONObject("message")
+        }.getOrNull() ?: return raw.trim()
+        message.optJSONObject("audio")?.optString("transcript")?.takeIf { it.isNotBlank() }?.let { return it }
+        return when (val content = message.opt("content")) {
+            is String -> content
+            is org.json.JSONArray -> buildString {
+                for (i in 0 until content.length()) {
+                    val text = content.optJSONObject(i)?.optString("text").orEmpty()
+                    if (text.isBlank()) continue
+                    if (isNotEmpty()) append('\n')
+                    append(text)
+                }
+            }
+            else -> raw.trim()
+        }.trim()
     }
 
     /** Surfaces why the endpoint refused, instead of a bare status code. */
@@ -200,6 +244,7 @@ class CustomAsrEngine(
         }.getOrNull().orEmpty().ifBlank { raw.take(160) }
         val hint = when (code) {
             401, 403 -> "语音识别服务拒绝了密钥"
+            400 -> "模型不支持音频输入或请求过大"
             404 -> "语音识别地址或模型不存在"
             413 -> "录音过长，服务不接受"
             429 -> "语音识别服务限流或额度不足"
@@ -216,25 +261,26 @@ class CustomAsrEngine(
 
     companion object {
         /**
-         * Completes a user-entered base URL the same way the chat endpoints do: a bare host gains
-         * `/v1/audio/transcriptions`, a `/v1`-style root gains only the endpoint, and a URL that
-         * already names the endpoint is used verbatim.
+         * Resolves the chat-completions URL for transcription (see
+         * [com.cone.agent.data.remote.EndpointResolver.chatCompletionsUrl]): a bare host gains
+         * `/v1/chat/completions`, a `/v1`-style root gains only the endpoint, and a URL that
+         * already names it — or a previously-saved `/v1/audio/...` address — is normalized to it.
          */
-        fun transcriptionUrl(baseUrl: String): String {
-            var base = baseUrl.trim().trimEnd('/')
-            if (base.contains("/chat/completions")) base = base.substringBefore("/chat/completions").trimEnd('/')
-            if (base.contains("/audio/transcriptions")) return base.substringBefore("/audio") + "/audio/transcriptions"
-            val endpoint = "/audio/transcriptions"
-            return when {
-                base.endsWith(endpoint) -> base
-                base.endsWith("/transcriptions") -> base
-                Regex("^v\\d+.*", RegexOption.IGNORE_CASE).matches(base.substringAfterLast('/')) ->
-                    "$base$endpoint"
-                else -> "$base/v1$endpoint"
-            }
+        fun transcriptionUrl(baseUrl: String): String =
+            com.cone.agent.data.remote.EndpointResolver.chatCompletionsUrl(baseUrl)
+
+        /**
+         * Audio format label for the `input_audio` part. The recorder captures AAC in an MP4
+         * container; servers sniff the bytes, and `mp3` is the closest accepted label for anything
+         * that isn't already wav/mp3.
+         */
+        private fun audioFormat(file: File): String = when (file.extension.lowercase()) {
+            "wav" -> "wav"
+            "mp3" -> "mp3"
+            else -> "mp3"
         }
 
-        private val AUDIO_MEDIA_TYPE = "audio/mp4".toMediaType()
+        private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 
         private val client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -250,5 +296,7 @@ class CustomAsrEngine(
         private const val NO_SPEECH_TIMEOUT_MS = 6_000L
         private const val MAX_RECORD_MS = 60_000L
         private const val MIN_AUDIO_BYTES = 2_048L
+        /** Chat JSON carries base64 audio; refuse clips that would explode the request body. */
+        private const val MAX_AUDIO_BYTES = 15 * 1024 * 1024L
     }
 }

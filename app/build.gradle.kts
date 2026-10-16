@@ -34,8 +34,8 @@ android {
         applicationId = "com.cone.agent"
         minSdk = 26
         targetSdk = 35
-        versionCode = 100
-        versionName = "1.00"
+        versionCode = 101
+        versionName = "1.01"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

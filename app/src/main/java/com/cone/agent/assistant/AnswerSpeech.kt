@@ -110,11 +110,27 @@ object AnswerSpeech {
     }
 
     private fun synthesize(context: Context, config: TtsConfig, text: String): File? {
+        // Chat-style speech synthesis (gpt-4o-audio-preview wire format): ask for both modalities
+        // and pull the base64 audio out of message.audio. Models without audio output answer with
+        // text only — that is a deliberate null (the caller falls back to the system engine).
         val body = JSONObject()
             .put("model", config.model)
-            .put("voice", config.voice)
-            .put("input", text.take(MAX_CHARS))
-            .put("response_format", "mp3")
+            .put("temperature", 0)
+            .put("modalities", org.json.JSONArray().put("text").put("audio"))
+            .put("audio", JSONObject().put("voice", config.voice).put("format", "mp3"))
+            .put(
+                "messages",
+                org.json.JSONArray().put(
+                    JSONObject()
+                        .put("role", "user")
+                        .put(
+                            "content",
+                            "Read the following text aloud exactly and naturally, in its own " +
+                                "language. Output speech only, no explanations:\n" +
+                                text.take(MAX_CHARS),
+                        ),
+                ),
+            )
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)
 
@@ -129,12 +145,27 @@ object AnswerSpeech {
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return null
-            val bytes = response.body?.bytes() ?: return null
+            val bytes = extractChatAudio(response.body?.string().orEmpty()) ?: return null
             if (bytes.isEmpty()) return null
             val file = File(context.cacheDir, "tts_${System.currentTimeMillis()}.mp3")
             file.writeBytes(bytes)
             return file
         }
+    }
+
+    /** Decodes `choices[0].message.audio.data` (base64) of a chat-completions answer, if present. */
+    private fun extractChatAudio(raw: String): ByteArray? {
+        val data = runCatching {
+            JSONObject(raw)
+                .optJSONArray("choices")
+                ?.optJSONObject(0)
+                ?.optJSONObject("message")
+                ?.optJSONObject("audio")
+                ?.optString("data")
+        }.getOrNull().orEmpty().ifBlank { return null }
+        return runCatching {
+            android.util.Base64.decode(data, android.util.Base64.DEFAULT)
+        }.getOrNull()
     }
 
     private suspend fun ttsConfig(context: Context): TtsConfig? =
@@ -145,20 +176,9 @@ object AnswerSpeech {
     private fun estimateDurationMs(text: String): Long =
         (text.length * MS_PER_CHAR).toLong().coerceIn(1_500L, 10 * 60_000L)
 
-    /** Completes a base URL the same way the chat and ASR endpoints do. Supports chat/completions as source. */
-    fun speechUrl(baseUrl: String): String {
-        var base = baseUrl.trim().trimEnd('/')
-        if (base.contains("/chat/completions")) base = base.substringBefore("/chat/completions").trimEnd('/')
-        if (base.contains("/audio/speech")) return base.substringBefore("/audio/speech") + "/audio/speech"
-        val endpoint = "/audio/speech"
-        return when {
-            base.endsWith(endpoint) -> base
-            base.endsWith("/speech") -> base
-            Regex("^v\\d+.*", RegexOption.IGNORE_CASE).matches(base.substringAfterLast('/')) ->
-                "$base$endpoint"
-            else -> "$base/v1$endpoint"
-        }
-    }
+    /** Chat-completions URL for speech synthesis (see EndpointResolver.chatCompletionsUrl). */
+    fun speechUrl(baseUrl: String): String =
+        com.cone.agent.data.remote.EndpointResolver.chatCompletionsUrl(baseUrl)
 
     @EntryPoint
     @InstallIn(SingletonComponent::class)

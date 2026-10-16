@@ -27,6 +27,7 @@ import com.cone.agent.domain.model.ConversationSummary
 import com.cone.agent.domain.model.Sender
 import com.cone.agent.domain.model.UiMessage
 import com.cone.agent.vision.AccessibilityBridge
+import com.cone.agent.vision.AccessibilityState
 import com.cone.agent.vision.ImageUtils
 import com.cone.agent.vision.ScreenCaptureManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -54,6 +55,8 @@ enum class ChatMode { AGENT, ASK, CODE }
 data class EnvironmentStatus(
     val modelReady: Boolean = false,
     val accessibilityReady: Boolean = false,
+    /** 系统设置里无障碍是开着的，但服务还没重新绑定上（重启/恢复中，等一会儿即可）。 */
+    val accessibilityRestarting: Boolean = false,
     val overlayReady: Boolean = false,
     val captureReady: Boolean = false,
     val notificationsReady: Boolean = true,
@@ -226,6 +229,8 @@ class ChatViewModel @Inject constructor(
         EnvironmentStatus(
             modelReady = model != null,
             accessibilityReady = accessibility,
+            // 系统里开着但服务还没绑回来 = 重启中（见 AccessibilityState）
+            accessibilityRestarting = !accessibility && AccessibilityState.isEnabledInSettings(context),
             overlayReady = canDrawOverlays(),
             captureReady = capture,
             notificationsReady = notificationsGranted(),

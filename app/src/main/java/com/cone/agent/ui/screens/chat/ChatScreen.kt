@@ -1426,7 +1426,15 @@ private fun ConfirmCard(
 private fun EnvironmentBanner(environment: EnvironmentStatus, onFix: () -> Unit) {
     val missing = buildList {
         if (!environment.modelReady) add(stringResource(R.string.env_pick_model))
-        if (!environment.accessibilityReady) add(stringResource(R.string.env_accessibility))
+        if (!environment.accessibilityReady) {
+            add(
+                if (environment.accessibilityRestarting) {
+                    stringResource(R.string.env_accessibility_restarting)
+                } else {
+                    stringResource(R.string.env_accessibility)
+                },
+            )
+        }
         if (!environment.overlayReady) add(stringResource(R.string.env_overlay))
         if (!environment.captureReady) add(stringResource(R.string.env_capture))
     }

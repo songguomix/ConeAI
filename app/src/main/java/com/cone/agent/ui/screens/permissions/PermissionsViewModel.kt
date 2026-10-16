@@ -43,6 +43,9 @@ class PermissionsViewModel @Inject constructor(
         EnvironmentStatus(
             modelReady = model != null,
             accessibilityReady = accessibility,
+            // 系统里开着但服务还没绑回来 = 重启中（见 AccessibilityState）
+            accessibilityRestarting = !accessibility &&
+                com.cone.agent.vision.AccessibilityState.isEnabledInSettings(context),
             overlayReady = canDrawOverlays(),
             captureReady = capture,
             notificationsReady = notificationsGranted(),

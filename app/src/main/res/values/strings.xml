@@ -73,6 +73,7 @@
     <string name="env_fix">去准备</string>
     <string name="env_pick_model">选择模型</string>
     <string name="env_accessibility">开启无障碍服务</string>
+    <string name="env_accessibility_restarting">无障碍服务正在重启，稍等片刻即可</string>
     <string name="env_overlay">允许悬浮窗</string>
     <string name="env_capture">授权屏幕捕获</string>
     <string name="model_hint_title">还没有选择模型</string>
@@ -124,10 +125,10 @@
     <string name="settings_asr_title">自定义语音识别（ASR）</string>
     <string name="settings_asr_using_system">正在使用系统语音识别（点击展开可改用自己的服务）</string>
     <string name="settings_asr_using_custom">正在使用自定义服务：%1$s</string>
-    <string name="settings_asr_desc">填写与 OpenAI /v1/audio/transcriptions 兼容的语音转文字服务，用于语音助手和输入框麦克风。留空则使用系统自带的语音识别。</string>
+    <string name="settings_asr_desc">填写支持音频输入的聊天模型服务（/v1/chat/completions），用于语音助手和输入框麦克风。留空则使用系统自带的语音识别。</string>
     <string name="settings_asr_url_label">服务地址（Base URL）</string>
     <string name="settings_asr_key_label">API Key（可留空）</string>
-    <string name="settings_asr_model_label">模型名（默认 whisper-1）</string>
+    <string name="settings_asr_model_label">模型名（默认 gpt-4o-audio-preview，需支持音频输入）</string>
     <string name="settings_asr_lang_label">语言代码（可留空自动识别，如 zh）</string>
     <string name="settings_asr_wake_note">说明：语音唤醒不使用此服务，始终由本机离线模型完成——唤醒需要长期监听且不能联网上传。</string>
     <string name="memory_category_identity">身份</string>
@@ -143,10 +144,10 @@
     <string name="settings_tts_title">自定义语音合成（TTS）</string>
     <string name="settings_tts_using_system">正在使用系统语音合成（点击展开可改用自己的服务）</string>
     <string name="settings_tts_using_custom">正在使用自定义服务：%1$s</string>
-    <string name="settings_tts_desc">填写与 OpenAI /v1/audio/speech 兼容的语音合成服务，用于问答朗读与语音助手播报。留空则使用系统自带引擎。</string>
+    <string name="settings_tts_desc">填写支持音频输出的聊天模型服务（/v1/chat/completions），用于问答朗读与语音助手播报。留空则使用系统自带引擎。</string>
     <string name="settings_tts_url_label">服务地址（Base URL）</string>
     <string name="settings_tts_key_label">API Key（可留空）</string>
-    <string name="settings_tts_model_label">模型名（默认 tts-1）</string>
+    <string name="settings_tts_model_label">模型名（默认 gpt-4o-audio-preview，需支持音频输出）</string>
     <string name="settings_tts_voice_label">音色（默认 alloy）</string>
     <string name="settings_vision_model_title">画面理解模型</string>
     <string name="settings_vision_model_desc">负责看截图并输出文字描述，必须支持视觉。</string>
@@ -227,6 +228,7 @@
     <string name="perm_model_desc">Agent 的大脑，需在「模型与设置」中选择一个模型。</string>
     <string name="perm_a11y_title">2. 无障碍服务</string>
     <string name="perm_a11y_desc">Agent 的“手”，用于点击、输入、滑动并读取界面结构。</string>
+    <string name="perm_a11y_restarting">系统设置里已开启，服务正在重启绑定，稍等片刻即可恢复，无需重复开启。</string>
     <string name="perm_go_enable">前往开启</string>
     <string name="perm_overlay_title">3. 悬浮窗权限</string>
     <string name="perm_overlay_desc">用于显示可拖动的悬浮控制中心，便于随时暂停 / 接管。</string>

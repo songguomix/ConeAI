@@ -72,6 +72,7 @@
     <string name="env_fix">Set up</string>
     <string name="env_pick_model">Choose a model</string>
     <string name="env_accessibility">Enable accessibility</string>
+    <string name="env_accessibility_restarting">Accessibility is restarting — it will be back in a moment</string>
     <string name="env_overlay">Allow overlay</string>
     <string name="env_capture">Grant screen capture</string>
     <string name="model_hint_title">No model selected</string>
@@ -123,10 +124,10 @@
     <string name="settings_asr_title">Custom speech recognition (ASR)</string>
     <string name="settings_asr_using_system">Using the system recogniser (tap to use your own service)</string>
     <string name="settings_asr_using_custom">Using custom service: %1$s</string>
-    <string name="settings_asr_desc">Point this at any speech-to-text service compatible with OpenAI /v1/audio/transcriptions. Used by the voice assistant and the input-box mic. Leave blank to use the system recogniser.</string>
+    <string name="settings_asr_desc">Point this at a chat model that accepts audio input (/v1/chat/completions). Used by the voice assistant and the input-box mic. Leave blank to use the system recogniser.</string>
     <string name="settings_asr_url_label">Base URL</string>
     <string name="settings_asr_key_label">API key (optional)</string>
-    <string name="settings_asr_model_label">Model (default whisper-1)</string>
+    <string name="settings_asr_model_label">Model (default gpt-4o-audio-preview, must accept audio input)</string>
     <string name="settings_asr_lang_label">Language code (blank = auto, e.g. zh)</string>
     <string name="settings_asr_wake_note">Note: wake-word detection never uses this service. It always runs on the bundled offline model, since it listens continuously and must not upload audio.</string>
     <string name="memory_category_identity">Identity</string>
@@ -142,10 +143,10 @@
     <string name="settings_tts_title">Custom speech synthesis (TTS)</string>
     <string name="settings_tts_using_system">Using the system engine (tap to use your own service)</string>
     <string name="settings_tts_using_custom">Using custom service: %1$s</string>
-    <string name="settings_tts_desc">Point this at any text-to-speech service compatible with OpenAI /v1/audio/speech. Used for reading answers aloud and for the voice assistant. Leave blank to use the built-in engine.</string>
+    <string name="settings_tts_desc">Point this at a chat model that returns audio output (/v1/chat/completions). Used for reading answers aloud and for the voice assistant. Leave blank to use the built-in engine.</string>
     <string name="settings_tts_url_label">Base URL</string>
     <string name="settings_tts_key_label">API key (optional)</string>
-    <string name="settings_tts_model_label">Model (default tts-1)</string>
+    <string name="settings_tts_model_label">Model (default gpt-4o-audio-preview, must return audio output)</string>
     <string name="settings_tts_voice_label">Voice (default alloy)</string>
     <string name="settings_vision_model_title">Vision model</string>
     <string name="settings_vision_model_desc">Looks at the screenshot and outputs a text description. Must support vision.</string>
@@ -226,6 +227,7 @@
     <string name="perm_model_desc">The agent\'s brain — choose a model in Models &amp; settings.</string>
     <string name="perm_a11y_title">2. Accessibility service</string>
     <string name="perm_a11y_desc">The agent\'s \"hands\" — used to tap, type, swipe and read the UI structure.</string>
+    <string name="perm_a11y_restarting">Already enabled in system settings; the service is rebinding after a restart. Wait a moment — no need to enable it again.</string>
     <string name="perm_go_enable">Enable</string>
     <string name="perm_overlay_title">3. Overlay permission</string>
     <string name="perm_overlay_desc">Shows a draggable floating control center so you can pause / take over anytime.</string>

@@ -45,6 +45,12 @@ class ConeAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // A fresh instance restarts the counters at zero — the same value the bridge reports when
+        // there is *no* service. Bumping here (plus a fresh timestamp) makes "just restarted"
+        // distinguishable from "disconnected" downstream, so the agent re-observes instead of
+        // trusting a stale snapshot taken before the restart.
+        if (screenChangeGeneration == 0L) screenChangeGeneration = 1L
+        lastScreenChangeAt = android.os.SystemClock.uptimeMillis()
         bridge.attach(this)
     }
 
@@ -248,13 +254,47 @@ class ConeAccessibilityService : AccessibilityService() {
 
     /* ---------- structured reading ---------- */
 
-    fun currentPackageName(): String? = rootInActiveWindow?.packageName?.toString()
+    fun currentPackageName(): String? {
+        runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()?.let { return it }
+        // Same restart race as dumpUiTree: fall back to any window's root instead of null.
+        return runCatching {
+            windows.firstNotNullOfOrNull { w ->
+                runCatching { w.root?.packageName?.toString() }.getOrNull()
+            }
+        }.getOrNull()
+    }
 
+    /**
+     * UI-tree read that survives a service restart. Two things go wrong right after a (re)start:
+     *  - the system hasn't attached the foreground window yet, so `rootInActiveWindow` is null;
+     *  - the window list contains stale/dead nodes that throw on traversal.
+     * So we briefly retry the active window, fall back to the first readable interactive window,
+     * and treat binder failures as "nothing readable" rather than crashing the agent's observe step.
+     */
     fun dumpUiTree(): List<UiElement> {
-        val root = rootInActiveWindow ?: return emptyList()
+        val root = activeRoot() ?: return emptyList()
         val out = ArrayList<UiElement>(64)
-        collect(root, out, depth = 0)
+        runCatching { collect(root, out, depth = 0) }.getOrElse { return emptyList() }
         return out
+    }
+
+    /** First readable active root: the active window, retried briefly, then any interactive window. */
+    private fun activeRoot(): AccessibilityNodeInfo? {
+        rootInActiveWindow?.let { return it }
+        for (i in 0 until ROOT_WARMUP_RETRIES) {
+            Thread.sleep(ROOT_WARMUP_DELAY_MS)
+            rootInActiveWindow?.let { return it }
+        }
+        // Warm-up exhausted: fall back to the window list (same trick resolveEditTarget uses), so a
+        // phase where the active window is unavailable doesn't read as an empty screen.
+        for (window in runCatching { windows }.getOrNull().orEmpty()) {
+            val root = runCatching { window.root }.getOrNull() ?: continue
+            // Skip windows whose nodes throw on the first probe — a stale window looks fine until
+            // something touches it.
+            if (runCatching { root.isVisibleToUser }.isFailure) continue
+            return root
+        }
+        return null
     }
 
     private fun collect(node: AccessibilityNodeInfo?, out: MutableList<UiElement>, depth: Int) {
@@ -301,5 +341,11 @@ class ConeAccessibilityService : AccessibilityService() {
     private companion object {
         const val MAX_NODES = 200
         const val MAX_DEPTH = 60
+        /**
+         * After a restart the active window can stay null for a moment while the system attaches it;
+         * a short blocking retry avoids reading that window as "empty screen".
+         */
+        const val ROOT_WARMUP_RETRIES = 5
+        const val ROOT_WARMUP_DELAY_MS = 60L
     }
 }
