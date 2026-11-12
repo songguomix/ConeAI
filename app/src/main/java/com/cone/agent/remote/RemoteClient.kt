@@ -28,6 +28,14 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 
+/** Header carrying the session token; also sent as `?t=` for backwards compatibility. */
+private const val HEADER_TOKEN = "x-remote-token"
+
+/** Strips `t=`/`p=` values and long hex tokens from anything we show or log. */
+internal fun redactSecret(text: String): String = text
+    .replace(Regex("""([?&](t|p)=)[^&\s]+"""), "$1<redacted>")
+    .replace(Regex("""\b[0-9a-fA-F]{32,}\b"""), "<redacted>")
+
 /** A parsed pairing target: the desktop's base URL, per-session token, and optional password. */
 data class RemoteEndpoint(val base: String, val token: String, val password: String? = null) {
     fun eventsUrl() = "$base/events?t=$token"
@@ -36,7 +44,27 @@ data class RemoteEndpoint(val base: String, val token: String, val password: Str
     /** A short, token-free label for the UI. */
     val display: String get() = base.removePrefix("http://").removePrefix("https://")
 
+    /** True when this session travels unencrypted (http on a LAN address only). */
+    val insecure: Boolean get() = base.startsWith("http://")
+
     companion object {
+        /** Loopback / RFC1918 / link-local hosts may use plain http on a trusted LAN. */
+        private fun isPrivateHost(host: String): Boolean {
+            val h = host.lowercase()
+            if (h == "localhost") return true
+            if (h.endsWith(".local") || h.endsWith(".lan")) return true
+            val parts = h.split('.').mapNotNull { it.toIntOrNull() }
+            if (parts.size != 4) return false
+            return when {
+                parts[0] == 10 -> true
+                parts[0] == 127 -> true
+                parts[0] == 192 && parts[1] == 168 -> true
+                parts[0] == 172 && parts[1] in 16..31 -> true
+                parts[0] == 169 && parts[1] == 254 -> true
+                else -> false
+            }
+        }
+
         /**
          * Parse a scanned/pasted pairing URL such as `http://192.168.1.23:8723/?t=<32-hex>` (LAN) or
          * `https://foo.trycloudflare.com/?t=<token>` (tunnel) into [RemoteEndpoint]. Returns null when
@@ -45,6 +73,8 @@ data class RemoteEndpoint(val base: String, val token: String, val password: Str
         fun parse(raw: String): RemoteEndpoint? {
             val url = raw.trim().toHttpUrlOrNull() ?: return null
             val token = url.queryParameter("t")?.takeIf { it.isNotBlank() } ?: return null
+            // 明文只在局域网/本机地址上放行：token 走 query，公网 http 等于把凭据裸奔。
+            if (url.scheme == "http" && !isPrivateHost(url.host)) return null
             // The QR may also carry the password (`&p=`) so scanning auto-connects.
             val password = url.queryParameter("p")?.takeIf { it.isNotBlank() }
             val portPart = if (url.port == HttpUrl.defaultPort(url.scheme)) "" else ":${url.port}"
@@ -126,7 +156,9 @@ class RemoteClient(
                 if (coroutineContext.isActive) onStatus(RemoteStatus.Kicked)
                 return
             } catch (e: IOException) {
-                if (coroutineContext.isActive) onStatus(RemoteStatus.Error(e.message ?: "connection lost"))
+                if (coroutineContext.isActive) {
+                    onStatus(RemoteStatus.Error(redactSecret(e.message ?: "connection lost")))
+                }
             }
             if (!coroutineContext.isActive) break
             delay(backoff)
@@ -143,6 +175,7 @@ class RemoteClient(
             .url(endpoint.eventsUrl())
             .header("Accept", "text/event-stream")
             .header("Cache-Control", "no-cache")
+            .header(HEADER_TOKEN, endpoint.token)
             .apply { endpoint.password?.let { header("x-remote-pass", it) } }
             .build()
         val call: Call = streamClient.newCall(request)
@@ -221,7 +254,18 @@ class RemoteClient(
      * Send a request and await its `reply` frame (matched by a generated reqId), with a timeout.
      * Returns the reply object, or null on timeout. Used by the file browser / editor / terminal.
      */
-    suspend fun request(type: String, fields: Map<String, String>): JsonObject? {
+    /**
+     * Send a command and await its reply.
+     *
+     * [timeoutMs] guards every request so a lost reply cannot hang the UI; long-running
+     * commands (exec) pass a much larger value instead of pretending to fail at 20s.
+     */
+    suspend fun request(
+        type: String,
+        fields: Map<String, String>,
+        timeoutMs: Long = 20_000L,
+        onSendFailed: (() -> Unit)? = null,
+    ): JsonObject? {
         val reqId = UUID.randomUUID().toString()
         val deferred = CompletableDeferred<JsonObject>()
         pending[reqId] = deferred
@@ -231,22 +275,27 @@ class RemoteClient(
             fields.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
         }
         return try {
-            postJson(obj)
-            withTimeoutOrNull(20_000) { deferred.await() }
+            // A failed HTTP send will never produce a reply — fail fast instead of burning
+            // the whole exec budget.
+            if (!postJson(obj)) {
+                onSendFailed?.invoke()
+                return null
+            }
+            withTimeoutOrNull(timeoutMs) { deferred.await() }
         } finally {
             pending.remove(reqId)
         }
     }
 
-    private suspend fun postJson(obj: JsonObject) = withContext(Dispatchers.IO) {
+    private suspend fun postJson(obj: JsonObject): Boolean = withContext(Dispatchers.IO) {
         coroutineContext.ensureActive()
         val json = RemoteJson.encodeToString(JsonObject.serializer(), obj)
         val request = Request.Builder()
             .url(endpoint.cmdUrl())
             .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .header(HEADER_TOKEN, endpoint.token)
             .apply { endpoint.password?.let { header("x-remote-pass", it) } }
             .build()
-        runCatching { commandClient.newCall(request).execute().use { } }
-        Unit
+        runCatching { commandClient.newCall(request).execute().use { it.isSuccessful } }.getOrDefault(false)
     }
 }

@@ -12,11 +12,12 @@ object Constants {
 
     // Notification channels
     const val CHANNEL_AGENT = "cone_agent_channel"
+    /** Persistent remote-control session (foreground service notification). */
+    const val CHANNEL_REMOTE = "cone_remote_channel"
+
     const val CHANNEL_CAPTURE = "cone_capture_channel"
-    const val CHANNEL_WAKE = "cone_wake_channel"
     const val NOTIF_AGENT_ID = 1001
     const val NOTIF_CAPTURE_ID = 1002
-    const val NOTIF_WAKE_ID = 1003
 
     // Agent loop limits
     const val DEFAULT_MAX_STEPS = 25
@@ -46,10 +47,6 @@ object Constants {
     // screen before it auto-closes — long enough to read the outcome, short enough to get out of the
     // way. The completion summary also stays in the conversation log.
     const val AGENT_CARD_AUTO_DISMISS_MS = 4000L
-
-    // Wake-word match leniency, 0f (strict: requires the literal 松果 — fewest false triggers) ..
-    // 1f (loose: accepts many homophones — easiest to trigger). Mid is the balanced default.
-    const val DEFAULT_WAKE_SENSITIVITY = 0.5f
 
     // Screenshot downscale target (longest edge) for model upload. Lower = faster upload + fewer
     // image tokens, but small UI text gets harder to read, which causes misrecognition. 1080 / q70

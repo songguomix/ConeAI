@@ -176,7 +176,7 @@ class VoskSpeechEngine(private val context: Context) {
 
         @Volatile private var sharedModel: Model? = null
 
-        /** Public accessor so other components (e.g. the wake-word service) can reuse the loaded model. */
+        /** Public accessor so other components can reuse the loaded model. */
         fun obtainModel(context: Context): Model = loadSharedModel(context)
 
         /** Loads the model once per process: copy assets → internal storage (cached), then [Model]. */

@@ -24,14 +24,8 @@ object Notifications {
             context.getString(R.string.channel_capture_name),
             NotificationManager.IMPORTANCE_MIN,
         )
-        val wake = NotificationChannel(
-            Constants.CHANNEL_WAKE,
-            context.getString(R.string.channel_wake_name),
-            NotificationManager.IMPORTANCE_LOW,
-        )
         manager.createNotificationChannel(agent)
         manager.createNotificationChannel(capture)
-        manager.createNotificationChannel(wake)
     }
 
     private fun contentIntent(context: Context): PendingIntent {

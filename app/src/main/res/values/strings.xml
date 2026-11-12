@@ -6,7 +6,6 @@
     <!-- Notification channels -->
     <string name="channel_agent_name">Agent 运行</string>
     <string name="channel_capture_name">屏幕捕获</string>
-    <string name="channel_wake_name">语音唤醒</string>
 
     <!-- Floating control center -->
     <string name="fc_pause">暂停</string>
@@ -28,6 +27,9 @@
     <string name="greeting_afternoon">下午好</string>
     <string name="greeting_evening">晚上好</string>
     <string name="greeting_incognito">无痕模式</string>
+    <string name="chat_subtitle_agent">说一句话，AI 帮你操作手机</string>
+    <string name="chat_subtitle_ask">问我任何问题，或者让我看看屏幕</string>
+    <string name="chat_subtitle_incognito">无痕模式：这段对话不会落盘</string>
 
     <string name="hint_agent">描述要执行的任务…</string>
     <string name="hint_ask">问我任何问题…</string>
@@ -47,7 +49,7 @@
     <string name="cd_remove_file">移除文件</string>
 
     <string name="drawer_new_conversation">发起新对话</string>
-    <string name="drawer_settings">模型与设置</string>
+    <string name="drawer_settings">设置</string>
     <string name="drawer_providers">Provider 管理</string>
     <string name="drawer_permissions">权限与环境</string>
     <string name="drawer_clear_all">清除所有历史对话</string>
@@ -55,6 +57,12 @@
     <string name="clear_all_msg">将永久删除全部智能体与问答的历史对话，且无法恢复。</string>
     <string name="action_clear_all">全部清除</string>
     <string name="drawer_history">历史对话</string>
+    <string name="drawer_short_settings">设置</string>
+    <string name="drawer_short_providers">服务</string>
+    <string name="drawer_short_permissions">权限</string>
+    <string name="drawer_short_remote">远程</string>
+    <string name="drawer_short_watch">手表</string>
+    <string name="drawer_clear_short">清空</string>
     <string name="drawer_no_history">还没有历史对话</string>
     <string name="cd_delete">删除</string>
     <string name="delete_conv_title">删除该对话？</string>
@@ -77,7 +85,7 @@
     <string name="env_overlay">允许悬浮窗</string>
     <string name="env_capture">授权屏幕捕获</string>
     <string name="model_hint_title">还没有选择模型</string>
-    <string name="model_hint_body">在「模型与设置」中选择一个模型后即可开始提问。</string>
+    <string name="model_hint_body">点顶部的「选择模型」挑一个模型，就能开始提问了。</string>
     <string name="model_hint_action">去选择</string>
 
     <!-- Shared -->
@@ -89,6 +97,9 @@
     <string name="agent_step_format_unlimited">%1$s · 第 %2$d 步（不限）</string>
     <string name="agent_current_action">当前动作：%1$s</string>
     <string name="agent_hide_plan">隐藏计划</string>
+    <string name="agent_view_plan">查看计划</string>
+    <string name="agent_step_short">第 %1$d 步</string>
+    <string name="agent_step_of">第 %1$d / %2$d 步</string>
     <string name="confirm_title">⚠️ 高风险操作确认</string>
     <string name="confirm_about_to">即将执行：%1$s</string>
     <string name="confirm_approve">确认执行</string>
@@ -108,9 +119,18 @@
 
     <!-- Settings screen -->
     <string name="settings_agent_model_title">Agent 主模型</string>
+    <string name="settings_group_connections">扩展连接</string>
+    <string name="settings_group_recognition">识别</string>
+    <string name="settings_group_behavior">智能体行为</string>
+    <string name="settings_group_voice">记忆与语音</string>
+    <string name="settings_group_legal">关于与协议</string>
+    <string name="settings_group_general">通用</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_language_title">界面语言</string>
+    <string name="settings_language_desc">切换后整个 App 的文案会立即使用该语言。</string>
     <string name="settings_agent_model_desc">选择「智能体」模式使用的模型（单模型时需支持视觉）。</string>
     <string name="settings_screen_source_title">屏幕识别方式</string>
-    <string name="settings_screen_source_desc">智能体每一步靠什么读懂屏幕。两者二选一，结果都交给上面的「Agent 主模型」决定下一步动作。</string>
+    <string name="settings_screen_source_desc">智能体每一步靠什么读懂屏幕。两者二选一，结果都交给主界面当前选择的模型决定下一步动作。</string>
     <string name="settings_screen_source_local">本地 OCR（不发截图）</string>
     <string name="settings_screen_source_local_desc">在手机本地识别屏幕文字及坐标，只把文字结果交给主模型，不上传截图。任何模型都能用（含纯文本模型），离线、免费、最省 token 也最快。只认文字，纯图标按钮需靠无障碍控件识别。</string>
     <string name="settings_screen_source_cloud">云端识别（上传截图）</string>
@@ -130,7 +150,6 @@
     <string name="settings_asr_key_label">API Key（可留空）</string>
     <string name="settings_asr_model_label">模型名（默认 gpt-4o-audio-preview，需支持音频输入）</string>
     <string name="settings_asr_lang_label">语言代码（可留空自动识别，如 zh）</string>
-    <string name="settings_asr_wake_note">说明：语音唤醒不使用此服务，始终由本机离线模型完成——唤醒需要长期监听且不能联网上传。</string>
     <string name="memory_category_identity">身份</string>
     <string name="memory_category_preference">偏好</string>
     <string name="memory_category_relationship">关系</string>
@@ -224,11 +243,17 @@
     <!-- Permissions screen -->
     <string name="permissions_title">权限与环境准备</string>
     <string name="permissions_intro">ConeAI 需要以下能力才能代您操作手机。完成后即可在主页发起任务。</string>
+    <string name="perm_ready_title">准备情况</string>
+    <string name="perm_ready_count">%1$d/%2$d</string>
+    <string name="perm_status_granted">已授权</string>
+    <string name="perm_status_missing">未授权</string>
     <string name="perm_model_title">1. 选择模型</string>
-    <string name="perm_model_desc">Agent 的大脑，需在「模型与设置」中选择一个模型。</string>
+    <string name="perm_model_desc">Agent 的大脑：在主界面顶部「选择模型」中挑一个。</string>
     <string name="perm_a11y_title">2. 无障碍服务</string>
     <string name="perm_a11y_desc">Agent 的“手”，用于点击、输入、滑动并读取界面结构。</string>
     <string name="perm_a11y_restarting">系统设置里已开启，服务正在重启绑定，稍等片刻即可恢复，无需重复开启。</string>
+    <string name="perm_a11y_stuck">无障碍服务没有响应（系统里开着但没连上），点「重新开启」修一下。</string>
+    <string name="perm_reenable">重新开启</string>
     <string name="perm_go_enable">前往开启</string>
     <string name="perm_overlay_title">3. 悬浮窗权限</string>
     <string name="perm_overlay_desc">用于显示可拖动的悬浮控制中心，便于随时暂停 / 接管。</string>
@@ -246,12 +271,6 @@
     <string name="perm_applist_desc">允许读取已安装应用列表，智能体据此准确打开对应 App（部分手机需在此授权「获取应用列表」）。</string>
     <string name="perm_assistant_title">8. 设为默认语音助手</string>
     <string name="perm_assistant_desc">设为系统默认数字助理后，可长按电源键 / Home 键唤起语音弹窗，说完即自动开始执行。</string>
-    <string name="perm_wake_title">9. 语音唤醒（Hey, pine cone）</string>
-    <string name="perm_wake_desc">开启后在后台持续聆听唤醒词「你好松果」或「Hey pine cone」，听到即弹出语音助手。采用低优先级语音识别音源，其他应用需要麦克风时会自动让出、互不冲突。需麦克风权限。建议使用中文「你好松果」，识别更稳定。</string>
-    <string name="perm_wake_sensitivity_title">唤醒灵敏度</string>
-    <string name="perm_wake_sensitivity_desc">调低可减少误唤醒（需更接近「松果」才触发）；调高更容易被唤醒。</string>
-    <string name="perm_wake_sensitivity_low">低（更严格）</string>
-    <string name="perm_wake_sensitivity_high">高（更灵敏）</string>
     <string name="perm_go_settings">前往设置</string>
     <string name="perm_stop_capture">停止屏幕捕获</string>
 
@@ -354,8 +373,6 @@
 
     <!-- Notifications, offline speech, launcher, risk, misc -->
     <string name="notif_agent_ready">ConeAI 已就绪</string>
-    <string name="notif_wake_title">语音唤醒已开启</string>
-    <string name="notif_wake_text">说「你好松果」或「Hey pine cone」唤醒</string>
     <string name="notif_capture_ready">屏幕捕获已就绪</string>
     <string name="vosk_load_failed">加载离线语音模型失败：%1$s</string>
     <string name="vosk_start_failed">启动离线识别失败：%1$s</string>
@@ -506,6 +523,23 @@
     <string name="remote_tab_chat">对话</string>
     <string name="remote_files">文件</string>
     <string name="remote_terminal">终端</string>
+    <string name="remote_changes">变更</string>
+    <string name="remote_no_changes">还没有待办或代码变更。</string>
+    <string name="remote_change_applied">已应用</string>
+    <string name="remote_change_reverted">已撤回</string>
+    <string name="remote_change_failed">失败</string>
+    <string name="remote_changes_history">历史变更（%1$d）</string>
+    <string name="remote_pick_file">从左侧选择一个文件</string>
+    <string name="remote_todos">待办</string>
+    <string name="remote_all_done">全部完成</string>
+    <string name="remote_pending_changes">待确认 · %1$d</string>
+    <string name="remote_attach">添加</string>
+    <string name="remote_term_timeout">等待超时 · 命令可能仍在电脑端运行</string>
+    <string name="remote_term_disconnected">未连接，命令没有发送</string>
+    <string name="remote_term_cancel">已停止等待（命令仍在电脑端运行）</string>
+    <string name="remote_term_running">运行中 %1$ds</string>
+    <string name="remote_term_empty">在这里输入命令，直接在电脑端执行。</string>
+    <string name="remote_term_history_prev">上一条命令</string>
     <string name="remote_open_folder">打开文件夹</string>
     <string name="remote_set_root">设为根目录</string>
     <string name="remote_no_folder">未打开文件夹</string>
@@ -544,6 +578,11 @@
     <string name="remote_new_chat">新对话</string>
     <string name="remote_no_messages">还没有消息。</string>
     <string name="remote_disconnect">断开连接</string>
+    <string name="remote_insecure_chip">未加密</string>
+    <string name="remote_cleartext_rejected">公网地址必须使用 https 链接；仅局域网 / 本机可以用 http。</string>
+    <string name="remote_service_title">远程控制已连接</string>
+    <string name="remote_service_text">正在保持与电脑的连接，点按返回</string>
+    <string name="channel_remote_name">远程会话</string>
     <string name="remote_approve">同意</string>
     <string name="remote_reject">拒绝</string>
     <string name="remote_approve_all">全部同意（%1$d）</string>
@@ -622,6 +661,12 @@
     <string name="code_rename_project">重命名项目</string>
     <string name="code_clear_chat">清空对话</string>
     <string name="code_files">文件</string>
+    <string name="code_tab_chat">对话</string>
+    <string name="code_tab_changes">改动</string>
+    <string name="code_tab_changes_count">改动 %1$d</string>
+    <string name="code_changes_empty">这次会话还没有改动文件</string>
+    <string name="code_changes_summary">%1$d 个文件 · +%2$d −%3$d</string>
+    <string name="code_changes_open">打开文件</string>
     <string name="code_preview">预览</string>
     <string name="code_reload">刷新</string>
     <string name="code_new_file">新建文件</string>
@@ -655,6 +700,7 @@
     <!-- 写代码：首页（AI 提项目）、历史项目、项目文件夹 -->
     <string name="code_home_title">今天做个什么？</string>
     <string name="code_home_desc">说一句话，AI 会新建一个项目文件夹，直接把代码写进去。</string>
+    <string name="code_storage_grant_short">存到手机存储</string>
     <string name="code_hint_home">想做点什么…</string>
     <string name="code_ideas_title">AI 觉得可以做</string>
     <string name="code_ideas_refresh">换一批</string>

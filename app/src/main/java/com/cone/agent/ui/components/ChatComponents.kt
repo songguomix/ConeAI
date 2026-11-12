@@ -1,8 +1,11 @@
 package com.cone.agent.ui.components
 
+import android.widget.Toast
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,8 +25,8 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.StopCircle
-import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,7 +51,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import android.widget.Toast
 import coil.compose.AsyncImage
 import com.cone.agent.R
 import com.cone.agent.assistant.AnswerSpeech
@@ -87,86 +90,88 @@ private fun ToolCard(message: UiMessage) {
     val first = lines.firstOrNull().orEmpty()
     val body = remember(message.text) { lines.drop(1).joinToString("\n").trim() }
     val arrow = first.indexOf(" → ")
-    val title = if (arrow > 0) first.substring(0, arrow) else first
+    val rawTitle = if (arrow > 0) first.substring(0, arrow) else first
     val status = if (arrow > 0) first.substring(arrow + 3) else null
-    val isAction = arrow > 0 || body.isBlank()
-    val expandable = body.isNotBlank() || title.length > 60
+    val expandable = body.isNotBlank() || rawTitle.length > 60
     var expanded by remember { mutableStateOf(false) }
 
-    val container = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
-    val textColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
-    val subColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
-    // Pixel 式圆形图标徽章：动作走主色实心圆，信息返回走次级色调圆，失败走 error 圆。
-    val badgeColor = when {
-        isError -> MaterialTheme.colorScheme.error
-        isAction -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.secondaryContainer
-    }
-    val badgeIconColor = when {
-        isError -> MaterialTheme.colorScheme.onError
-        isAction -> MaterialTheme.colorScheme.onPrimary
-        else -> MaterialTheme.colorScheme.onSecondaryContainer
-    }
+    val dotColor = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val textColor = MaterialTheme.colorScheme.onSurface
+    val subColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-    Surface(
-        shape = ConeShapes.Card,
-        color = container,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    // 一步一行，像 GitHub Actions 的步骤列表：左侧状态点 + 人话动作 + 结果，点开才看细节。
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 3.dp)
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .let { if (expandable) it.clickable { expanded = !expanded } else it }
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .animateContentSize(),
+        verticalAlignment = Alignment.Top,
     ) {
-        Column(
+        Box(
             modifier = Modifier
-                .let { if (expandable) it.clickable { expanded = !expanded } else it }
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-                .animateContentSize(),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = badgeColor, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        // 动作用闪电（接口直达）；纯信息返回用地球（网络数据）。
-                        if (isAction) Icons.Filled.Bolt else Icons.Filled.Language,
-                        contentDescription = null,
-                        tint = badgeIconColor,
-                        modifier = Modifier.padding(7.dp),
-                    )
-                }
-                Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = textColor,
-                        maxLines = if (expanded) Int.MAX_VALUE else 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    status?.takeIf { it.isNotBlank() }?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = subColor,
-                            maxLines = if (expanded) Int.MAX_VALUE else 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                if (expandable) {
-                    Icon(
-                        if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = null,
-                        tint = subColor,
-                        modifier = Modifier.padding(start = 4.dp).size(20.dp),
-                    )
-                }
+                .padding(top = 5.dp)
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(dotColor),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = humanAction(rawTitle),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = textColor,
+                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            status?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isError) MaterialTheme.colorScheme.error else subColor,
+                    maxLines = if (expanded) Int.MAX_VALUE else 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             if (expanded && body.isNotBlank()) {
                 Text(
                     text = body,
                     style = MaterialTheme.typography.bodySmall,
-                    color = textColor,
-                    modifier = Modifier.padding(start = 44.dp, top = 6.dp, end = 4.dp),
+                    color = subColor,
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
         }
+        if (expandable) {
+            Icon(
+                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+                tint = subColor,
+                modifier = Modifier.padding(top = 2.dp).size(16.dp),
+            )
+        }
     }
+}
+
+/** 把工具名/英文动作翻成"正在做什么"，看不懂就原样显示。 */
+internal fun humanAction(raw: String): String {
+    val text = raw.trim()
+    val map = listOf(
+        "tap" to "点击", "click" to "点击", "long_press" to "长按",
+        "swipe" to "滑动", "scroll" to "滚动", "type" to "输入", "input_text" to "输入",
+        "open_app" to "打开应用", "launch" to "打开", "back" to "返回", "home" to "回到桌面",
+        "screenshot" to "看屏幕", "observe" to "读取屏幕", "wait" to "等待",
+    )
+    for ((needle, zh) in map) {
+        if (text.startsWith(needle, ignoreCase = true)) {
+            return zh + text.removePrefix(needle).trimStart(':', '：', ' ', '(', ')')
+        }
+    }
+    return text
 }
 
 @Composable
@@ -197,15 +202,16 @@ private fun UserBubble(message: UiMessage) {
         }
         message.fileName?.let { name -> FileCard(name, message.fileSize) }
         if (message.text.isNotBlank()) {
+            // Gemini 的用户消息：品牌色容器 + 大圆角，右下角收一个小角作为"气泡尾巴"。
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomEnd = 6.dp, bottomStart = 24.dp),
             ) {
                 Text(
                     text = message.text,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
             }
         }

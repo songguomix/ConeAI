@@ -5,10 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- Always-on wake-word listener runs as a microphone foreground service. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -126,16 +125,17 @@
                 android:value="Runs the on-device AI agent automation loop requested by the user." />
         </service>
 
+        <!-- Keeps an established desktop-remote session alive in the background. -->
+        <service
+            android:name=".service.RemoteSessionService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Overlay service drawing the floating control center. -->
         <service
             android:name=".service.FloatingControlService"
             android:exported="false" />
 
-        <!-- Always-on "Hey pine cone" / "松果" wake-word listener (on-device, mic foreground service). -->
-        <service
-            android:name=".service.WakeWordService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
 
         <!-- Digital-assistant entry point (selectable as the default assistant, summoned by the
              assist gesture / long-press power). -->

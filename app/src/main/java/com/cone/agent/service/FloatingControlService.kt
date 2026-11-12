@@ -112,7 +112,7 @@ class FloatingControlService : Service() {
 
     private fun render(state: com.cone.agent.agent.AgentRuntimeState) {
         // Text first and unconditionally — this is what the user watches, so keep it immediate.
-        statusText.text = state.currentAction
+        statusText.text = com.cone.agent.ui.components.humanAction(state.currentAction)
             .ifBlank { state.currentThought }
             .ifBlank {
                 if (state.maxSteps >= Constants.UNLIMITED_MAX_STEPS) {

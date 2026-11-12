@@ -26,12 +26,15 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -45,11 +48,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,8 +62,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cone.agent.R
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // File browser, file viewer/editor and terminal for the desktop-remote mirror. All run over the
@@ -96,7 +103,7 @@ internal fun FileBrowser(
         return
     }
 
-    Column(modifier = modifier.fillMaxSize().background(cx.bg0)) {
+    Column(modifier = modifier.fillMaxSize().background(cx.bg0).navigationBarsPadding()) {
         if (cwd == null) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -120,12 +127,22 @@ internal fun FileBrowser(
 
         // Path bar: up one level + current dir + "set as project root".
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(cx.bg1)
+                .padding(horizontal = 6.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = { cwd = parentDir(cwd!!) }) {
-                Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.cd_back), tint = cx.text, modifier = Modifier.size(18.dp))
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .clickable { cwd = parentDir(cwd!!) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.cd_back), tint = cx.muted, modifier = Modifier.size(15.dp))
             }
+            Spacer(Modifier.size(6.dp))
             Text(
                 cwd!!,
                 color = cx.muted,
@@ -161,28 +178,39 @@ internal fun FileBrowser(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                            .clip(RoundedCornerShape(8.dp))
                             .clickable {
                                 if (entry.isDirectory) cwd = entry.path
                                 else if (onPick != null) onPick(entry.path) // pick mode: insert, don't open
                                 else openPath = entry.path
                             }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            if (entry.isDirectory) Icons.Filled.Folder else Icons.Filled.InsertDriveFile,
+                            if (entry.isDirectory) Icons.Filled.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
                             contentDescription = null,
-                            tint = if (entry.isDirectory) cx.accent else cx.muted,
-                            modifier = Modifier.size(18.dp),
+                            tint = if (entry.isDirectory) cx.accent else cx.faint,
+                            modifier = Modifier.size(15.dp),
                         )
-                        Spacer(Modifier.size(12.dp))
+                        Spacer(Modifier.size(9.dp))
                         Text(
                             entry.name,
-                            color = cx.text,
-                            fontSize = 14.sp,
+                            color = if (entry.isDirectory) cx.text else cx.muted,
+                            fontSize = 13.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
+                        if (entry.isDirectory) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = cx.faint,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -195,7 +223,7 @@ internal fun FileBrowser(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun FileViewer(viewModel: RemoteViewModel, path: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
+internal fun FileViewer(viewModel: RemoteViewModel, path: String, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val cx = LocalRemotePalette.current
     val scope = rememberCoroutineScope()
     var content by remember(path) { mutableStateOf<String?>(null) }
@@ -298,50 +326,149 @@ private fun HeaderAction(icon: androidx.compose.ui.graphics.vector.ImageVector, 
 }
 
 // ---------------------------------------------------------------------------
-// Terminal (one-shot command → output)
+// Terminal (one-shot command with a locally tracked working directory)
 // ---------------------------------------------------------------------------
 
-private enum class TermKind { CMD, OUT, ERR }
-private data class TermLine(val text: String, val kind: TermKind)
+internal enum class TermKind { CMD, OUT, ERR, NOTE }
+internal data class TermLine(val text: String, val kind: TermKind)
+
+/** Keep the scrollback bounded so long sessions cannot grow the heap. */
+private const val TERM_MAX_LINES = 600
+
+/**
+ * Terminal scrollback for one mirror session.
+ *
+ * It lives above the tab switch and the exec runs on the ViewModel scope, so a command keeps
+ * running (and keeps its output) while the user is over in chat or files.
+ */
+internal class TerminalSession {
+    val lines = mutableStateListOf<TermLine>()
+    val history = mutableStateListOf<String>()
+    // Observability matters here: these are read by the terminal UI after tab switches.
+    var cwd: String? by mutableStateOf(null)
+    var input: String by mutableStateOf("")
+    var running: Boolean by mutableStateOf(false)
+    var startedAt: Long by mutableStateOf(0L)
+    var job: Job? = null
+
+    fun append(text: String, kind: TermKind) {
+        lines.add(TermLine(text, kind))
+        repeat(maxOf(0, lines.size - TERM_MAX_LINES)) { lines.removeAt(0) }
+    }
+}
 
 @Composable
-internal fun TerminalView(viewModel: RemoteViewModel, rootPath: String?, modifier: Modifier = Modifier) {
-    val cx = LocalRemotePalette.current
-    val scope = rememberCoroutineScope()
-    var input by remember { mutableStateOf("") }
-    var running by remember { mutableStateOf(false) }
-    val log = remember { mutableStateListOf<TermLine>() }
-    val listState = rememberLazyListState()
+internal fun rememberTerminalSession(): TerminalSession = remember { TerminalSession() }
 
-    val run: (String) -> Unit = { raw ->
+@Composable
+internal fun TerminalView(
+    viewModel: RemoteViewModel,
+    rootPath: String?,
+    session: TerminalSession,
+    modifier: Modifier = Modifier,
+) {
+    val cx = LocalRemotePalette.current
+    val ui by viewModel.state.collectAsStateWithLifecycle()
+    var elapsed by remember { mutableStateOf(0) }
+    val listState = rememberLazyListState()
+    var stickToBottom by remember { mutableStateOf(true) }
+    var histPos by remember { mutableStateOf(session.history.size) }
+
+    // The session follows the desktop's project root; a manual `cd` then overrides it
+    // until the root itself changes.
+    LaunchedEffect(rootPath) { session.cwd = rootPath }
+
+    val msgTimeout = stringResource(R.string.remote_term_timeout)
+    val msgDisconnected = stringResource(R.string.remote_term_disconnected)
+    val msgCancelled = stringResource(R.string.remote_term_cancel)
+
+    val run: (String) -> Unit = run@{ raw ->
         val cmd = raw.trim()
-        if (cmd.isNotEmpty() && !running) {
-            log.add(TermLine("$ $cmd", TermKind.CMD))
-            running = true
-            scope.launch {
-                val r = viewModel.runCommand(cmd, rootPath)
-                if (r.stdout.isNotBlank()) log.add(TermLine(r.stdout.trimEnd('\n'), TermKind.OUT))
-                if (r.stderr.isNotBlank()) log.add(TermLine(r.stderr.trimEnd('\n'), TermKind.ERR))
-                if (r.stdout.isBlank() && r.stderr.isBlank()) log.add(TermLine("(exit ${r.exitCode})", TermKind.OUT))
-                running = false
+        if (cmd.isEmpty() || session.running) return@run
+        session.append("❯ $cmd", TermKind.CMD)
+        if (session.history.isEmpty() || session.history.last() != cmd) {
+            session.history.add(cmd)
+            if (session.history.size > 50) session.history.removeAt(0)
+        }
+        histPos = session.history.size
+        if (ui.phase != RemotePhase.CONNECTED) {
+            session.append(msgDisconnected, TermKind.ERR)
+            return@run
+        }
+        // Each exec starts a fresh shell on the desktop, so a standalone `cd` is resolved here.
+        val cdTarget = resolveCd(cmd, session.cwd, rootPath)
+        if (cdTarget != null) {
+            session.cwd = cdTarget
+            session.append("cwd -> " + cdTarget, TermKind.NOTE)
+            return@run
+        }
+        session.running = true
+        session.startedAt = System.currentTimeMillis()
+        session.job = viewModel.launchSession {
+            val r = viewModel.runCommand(cmd, session.cwd)
+            when {
+                r.disconnected -> session.append(msgDisconnected, TermKind.ERR)
+                r.timedOut -> session.append(msgTimeout, TermKind.ERR)
+                else -> {
+                    if (r.stdout.isNotBlank()) session.append(r.stdout.trimEnd('\n'), TermKind.OUT)
+                    if (r.stderr.isNotBlank()) session.append(r.stderr.trimEnd('\n'), TermKind.ERR)
+                    if (r.exitCode != 0) {
+                        session.append("(exit ${r.exitCode})", TermKind.ERR)
+                    } else if (r.stdout.isBlank() && r.stderr.isBlank()) {
+                        session.append("(exit 0)", TermKind.NOTE)
+                    }
+                }
             }
+            session.running = false
         }
     }
 
-    LaunchedEffect(log.size) {
-        if (log.isNotEmpty()) listState.animateScrollToItem(log.size - 1)
+    LaunchedEffect(session.running) {
+        if (!session.running) {
+            elapsed = 0
+            return@LaunchedEffect
+        }
+        while (true) {
+            delay(500)
+            elapsed = ((System.currentTimeMillis() - session.startedAt) / 1000).toInt()
+        }
+    }
+
+    // Only follow new output while the user is already at the bottom.
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.canScrollForward }.collect { stickToBottom = !it }
+    }
+    LaunchedEffect(session.lines.size) {
+        if (session.lines.isNotEmpty() && stickToBottom) listState.animateScrollToItem(session.lines.size - 1)
     }
 
     Column(modifier = modifier.fillMaxSize().background(cx.bg0)) {
-        Text(
-            rootPath ?: "—",
-            color = cx.faint,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Terminal, contentDescription = null, tint = cx.faint, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.size(6.dp))
+            Text(
+                session.cwd ?: "—",
+                color = cx.faint,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (session.running) {
+                CircularProgressIndicator(strokeWidth = 1.5.dp, color = cx.accent, modifier = Modifier.size(11.dp))
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    stringResource(R.string.remote_term_running, elapsed),
+                    color = cx.accent,
+                    fontSize = 10.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
         HorizontalDivider(color = cx.border)
 
         LazyColumn(
@@ -349,13 +476,25 @@ internal fun TerminalView(viewModel: RemoteViewModel, rootPath: String?, modifie
             modifier = Modifier.weight(1f).fillMaxWidth().background(cx.bg1),
             contentPadding = PaddingValues(12.dp),
         ) {
-            items(log) { line ->
+            if (session.lines.isEmpty()) {
+                item {
+                    Text(
+                        stringResource(R.string.remote_term_empty),
+                        color = cx.faint,
+                        fontSize = 11.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = 17.sp,
+                    )
+                }
+            }
+            items(session.lines) { line ->
                 Text(
                     line.text,
                     color = when (line.kind) {
                         TermKind.CMD -> cx.accent
                         TermKind.ERR -> cx.danger
                         TermKind.OUT -> cx.text
+                        TermKind.NOTE -> cx.faint
                     },
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
@@ -372,35 +511,79 @@ internal fun TerminalView(viewModel: RemoteViewModel, rootPath: String?, modifie
                 .background(cx.bg0)
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // History recall: tap to walk back through previous commands.
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(enabled = session.history.isNotEmpty() && !session.running) {
+                        histPos = (histPos - 1).coerceAtLeast(0)
+                        if (session.history.isNotEmpty()) {
+                            session.input = session.history[histPos.coerceIn(0, session.history.lastIndex)]
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.ArrowUpward,
+                    contentDescription = stringResource(R.string.remote_term_history_prev),
+                    tint = if (session.history.isEmpty()) cx.faint else cx.muted,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
             DarkInput(
-                value = input,
-                onValueChange = { input = it },
+                value = session.input,
+                onValueChange = { session.input = it },
                 placeholder = stringResource(R.string.remote_cmd_hint),
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 imeAction = ImeAction.Go,
-                onImeAction = { run(input); input = "" },
+                // Keep the text when a command is already running instead of dropping it.
+                onImeAction = {
+                    if (!session.running) {
+                        run(session.input)
+                        session.input = ""
+                    }
+                },
             )
-            Spacer(Modifier.size(8.dp))
+            Spacer(Modifier.size(6.dp))
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
-                    .background(if (running || input.isBlank()) cx.bg3 else cx.accent)
-                    .clickable(enabled = !running && input.isNotBlank()) { run(input); input = "" },
+                    .background(if (session.running || session.input.isBlank()) cx.bg3 else cx.accent)
+                    .clickable {
+                        when {
+                            // Stop waiting; the command itself keeps running on the desktop.
+                            session.running -> {
+                                session.job?.cancel()
+                                session.running = false
+                                session.append(msgCancelled, TermKind.NOTE)
+                            }
+                            session.input.isNotBlank() -> {
+                                run(session.input)
+                                session.input = ""
+                            }
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                if (running) {
-                    CircularProgressIndicator(strokeWidth = 2.dp, color = cx.muted, modifier = Modifier.size(18.dp))
+                if (session.running) {
+                    Icon(
+                        Icons.Filled.Stop,
+                        contentDescription = stringResource(R.string.remote_term_cancel),
+                        tint = cx.muted,
+                        modifier = Modifier.size(16.dp),
+                    )
                 } else {
                     Icon(
                         Icons.Filled.PlayArrow,
                         contentDescription = stringResource(R.string.remote_run),
-                        tint = if (input.isBlank()) cx.faint else Color.White,
-                        modifier = Modifier.size(20.dp),
+                        tint = if (session.input.isBlank()) cx.faint else Color.White,
+                        modifier = Modifier.size(19.dp),
                     )
                 }
             }
@@ -415,6 +598,43 @@ private fun parentDir(path: String): String {
     val trimmed = path.trimEnd('/')
     val cut = trimmed.substringBeforeLast('/', "")
     return if (cut.isEmpty()) "/" else cut
+}
+
+/** Characters that mean "this is shell syntax, not a directory name". */
+private val SHELL_META = charArrayOf('&', '|', ';', '<', '>', '$', '`')
+
+/**
+ * A one-shot exec cannot change the directory of the next call: the desktop bridge runs each
+ * command in a fresh shell and echoes back the cwd it was given. So a standalone `cd` is
+ * resolved here and only the resulting path is kept; anything else (`cd x && cmd`, `cdk …`)
+ * still goes to the desktop untouched.
+ *
+ * @return the new cwd, or null when [raw] is not a standalone `cd`.
+ */
+internal fun resolveCd(raw: String, current: String?, rootPath: String?): String? {
+    val trimmed = raw.trim()
+    if (!trimmed.startsWith("cd")) return null
+    val rest = trimmed.removePrefix("cd")
+    if (!rest.isEmpty() && !rest.first().isWhitespace()) return null
+    val base = current ?: rootPath ?: return null
+    val rawArg = rest.trim()
+    val quoted = rawArg.length >= 2 && rawArg.first() == rawArg.last() &&
+        (rawArg.first() == '"' || rawArg.first() == '\'')
+    val arg = if (quoted) rawArg.substring(1, rawArg.length - 1) else rawArg
+    if (arg.any { it in SHELL_META }) return null
+    if (!quoted && arg.any { it.isWhitespace() }) return null
+    if (arg.isEmpty() || arg == "~") return rootPath ?: base
+    if (arg == "-") return parentDir(base)
+    val path = if (arg.startsWith("/")) arg else base + "/" + arg
+    val parts = mutableListOf<String>()
+    path.split('/').forEach { seg ->
+        when (seg) {
+            "", "." -> Unit
+            ".." -> if (parts.isNotEmpty()) parts.removeAt(parts.lastIndex)
+            else -> parts.add(seg)
+        }
+    }
+    return "/" + parts.joinToString("/")
 }
 
 private fun baseName(path: String): String {

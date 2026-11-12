@@ -3,7 +3,6 @@ package com.cone.agent.data.repository
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -149,13 +148,6 @@ class SettingsRepository @Inject constructor(
      */
     val searchEngine: Flow<String> = store.data.map { it[KEY_SEARCH_ENGINE] ?: "auto" }
 
-    /** When true, the always-on "Hey pine cone" / "松果" wake-word service runs (off by default). */
-    val wakeWordEnabled: Flow<Boolean> = store.data.map { it[KEY_WAKE_WORD] ?: false }
-
-    /** Wake-word match leniency in [0f, 1f]: lower = stricter (fewer false triggers), higher = easier. */
-    val wakeWordSensitivity: Flow<Float> =
-        store.data.map { it[KEY_WAKE_SENSITIVITY] ?: Constants.DEFAULT_WAKE_SENSITIVITY }
-
     /** UI language tag: "zh" (default), "en" or "ja". Applied app-wide by [com.cone.agent.MainActivity]. */
     val appLanguage: Flow<String> = store.data.map { it[KEY_APP_LANGUAGE] ?: "zh" }
 
@@ -284,16 +276,7 @@ class SettingsRepository @Inject constructor(
         store.edit { it[KEY_SEARCH_ENGINE] = value }
     }
 
-    suspend fun setWakeWordEnabled(value: Boolean) {
-        store.edit { it[KEY_WAKE_WORD] = value }
-    }
 
-    suspend fun setWakeWordSensitivity(value: Float) {
-        val sanitized = value.coerceIn(0f, 1f)
-        store.edit { it[KEY_WAKE_SENSITIVITY] = sanitized }
-        // Mirror to a synchronous store so WakeWordService can read it on a cold (sticky) restart.
-        com.cone.agent.core.WakeTuning.setSensitivity(context, sanitized)
-    }
 
     suspend fun setAppLanguage(tag: String) {
         store.edit { it[KEY_APP_LANGUAGE] = tag }
@@ -356,8 +339,6 @@ class SettingsRepository @Inject constructor(
         val KEY_APP_LANGUAGE = stringPreferencesKey("app_language")
         val KEY_WEB_SEARCH = booleanPreferencesKey("web_search_enabled")
         val KEY_SEARCH_ENGINE = stringPreferencesKey("search_engine")
-        val KEY_WAKE_WORD = booleanPreferencesKey("wake_word_enabled")
-        val KEY_WAKE_SENSITIVITY = floatPreferencesKey("wake_sensitivity")
         val KEY_REMOTE_ENDPOINT = stringPreferencesKey("remote_endpoint")
         val KEY_REMOTE_SECRET = stringPreferencesKey("remote_secret_cipher")
         val KEY_REMOTE_SECRET_IV = stringPreferencesKey("remote_secret_iv")

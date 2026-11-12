@@ -164,9 +164,12 @@ class AssistantActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Pause the always-on wake-word listener while the assistant owns the mic, so the two never
-        // capture / decode at the same time.
-        com.cone.agent.service.WakeWordService.suspended = true
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() = dismissWithAnimation()
+            },
+        )
         pill = AssistantPillView(
             context = this,
             onMic = { onMicTapped() },
@@ -176,7 +179,7 @@ class AssistantActivity : ComponentActivity() {
             onCamera = { launchCamera() },
             onImage = { runCatching { imagePicker.launch("image/*") } },
             onFile = { runCatching { filePicker.launch("*/*") } },
-            onDismiss = { finish() },
+            onDismiss = { dismissWithAnimation() },
             onSnipRect = { rect -> onSnipGesture(rect) },
             onModeChange = { agent -> if (agent) clearAttachments() },
             onSubmitText = { text -> onTextSubmitted(text) },
@@ -218,8 +221,6 @@ class AssistantActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // Resume the wake-word listener now that the assistant is releasing the mic.
-        com.cone.agent.service.WakeWordService.suspended = false
         // 胶囊离场：告知控制器屏幕已让出（等待中的屏幕动作会随之重新观察真实屏幕）。
         runCatching { agentController.setAssistantOverlayVisible(false) }
         scope.cancel()
@@ -512,6 +513,22 @@ class AssistantActivity : ComponentActivity() {
                 }
         }
     }
+
+    /**
+     * 收起来而不是"啪"地消失：先播反向动画（背板淡出 + 卡片下滑）再结束，
+     * 电源键唤起 → 点空白/返回 的整个过程是连续的。
+     */
+    private fun dismissWithAnimation() {
+        if (isDismissing) return
+        isDismissing = true
+        pill.animateOut {
+            finish()
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        }
+    }
+
+    private var isDismissing = false
 
     /** Expand the assistant into the full Cone app (dragging the pill's handle up). */
     private fun openMainApp() {

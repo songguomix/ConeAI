@@ -28,13 +28,14 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -46,14 +47,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cone.agent.R
 import com.cone.agent.data.remote.EndpointResolver
 import com.cone.agent.domain.model.ProviderProtocol
+import com.cone.agent.ui.components.SwitchRow
+import com.cone.agent.ui.theme.ConeShapes
 
 private fun protocolLabelRes(protocol: ProviderProtocol): Int = when (protocol) {
     ProviderProtocol.OPENAI -> R.string.provider_protocol_openai
@@ -208,27 +212,15 @@ fun ProviderEditScreen(
             HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
 
             // Model source: 自动发现 (GET /models) vs 手动填写 (typed by hand).
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                    Text(stringResource(R.string.provider_manual_switch_label), style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        stringResource(R.string.provider_manual_switch_desc),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked = manualModels,
-                    onCheckedChange = { on ->
-                        manualModels = on
-                        viewModel.setManualMode(currentId, on)
-                    },
-                )
-            }
+            SwitchRow(
+                title = stringResource(R.string.provider_manual_switch_label),
+                description = stringResource(R.string.provider_manual_switch_desc),
+                checked = manualModels,
+                onCheckedChange = { on ->
+                    manualModels = on
+                    viewModel.setManualMode(currentId, on)
+                },
+            )
 
             if (manualModels) {
                 Row(
@@ -265,9 +257,12 @@ fun ProviderEditScreen(
                 ) {
                     if (discovering) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp).padding(end = 8.dp),
+                            modifier = Modifier.size(16.dp),
                             strokeWidth = 2.dp,
                         )
+                        // 按钮内容本身是 Row：用 Spacer 留间距，不要给进度圈加 padding，
+                        // 那样圈会被 padding 挤压成偏心的一团。
+                        Spacer(Modifier.width(8.dp))
                     }
                     Text(stringResource(R.string.provider_discover))
                 }
@@ -290,19 +285,24 @@ fun ProviderEditScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else {
-                models.forEach { model ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                model.modelId,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f),
+                // 模型列表收进一张卡片，用 ListItem + 分割线排列：比一堆各自带 4dp 间距的小卡片
+                // 更像一个整体，也省纵向空间。
+                Card(shape = ConeShapes.Card, modifier = Modifier.fillMaxWidth()) {
+                    Column {
+                        models.forEachIndexed { index, model ->
+                            ListItem(
+                                headlineContent = {
+                                    Text(model.modelId, style = MaterialTheme.typography.bodyLarge)
+                                },
+                                trailingContent = {
+                                    IconButton(onClick = { viewModel.removeModel(model) }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+                                    }
+                                },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                             )
-                            IconButton(onClick = { viewModel.removeModel(model) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+                            if (index != models.lastIndex) {
+                                HorizontalDivider(modifier = Modifier.padding(start = 16.dp))
                             }
                         }
                     }

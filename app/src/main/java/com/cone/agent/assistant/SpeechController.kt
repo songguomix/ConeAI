@@ -84,7 +84,7 @@ class SpeechController(private val context: Context) {
         // way to point at it, and on a phone with no usable recognizer (common without Google
         // services) it is the only thing that works at all. Routed here rather than at the call
         // sites so the voice assistant and the input-box mic both get it for free.
-        // Wake-word detection deliberately does NOT come through here — it stays on the bundled
+        // Always-on wake-word detection used to live here; the feature is gone.
         // offline model, which must keep listening with no network and no per-phrase upload.
         asrConfig()?.let { config ->
             val engine = CustomAsrEngine(context, config)

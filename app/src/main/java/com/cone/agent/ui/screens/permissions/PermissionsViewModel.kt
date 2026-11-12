@@ -10,19 +10,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cone.agent.core.Constants
 import com.cone.agent.data.repository.SettingsRepository
-import com.cone.agent.service.WakeWordService
 import com.cone.agent.ui.screens.chat.EnvironmentStatus
 import com.cone.agent.vision.AccessibilityBridge
 import com.cone.agent.vision.ScreenCaptureManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @HiltViewModel
 class PermissionsViewModel @Inject constructor(
@@ -33,19 +33,60 @@ class PermissionsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val refreshTick = MutableStateFlow(0)
+    private val a11yStuck = MutableStateFlow(false)
+    private var lastRetryAt = 0L
+
+    init {
+        // 无障碍看门狗：系统里开着、但服务迟迟绑不回来（常见于崩溃循环或被停用后）时，
+        // 一直显示"重启中"会让人以为在正常等待。超过 6 秒就升级为"未响应"，给出重开入口。
+        viewModelScope.launch {
+            var waitingSince = 0L
+            while (true) {
+                delay(1000)
+                val connected = bridge.connected.value
+                val enabled = com.cone.agent.vision.AccessibilityState.isEnabledInSettings(context)
+                if (connected || !enabled) {
+                    waitingSince = 0L
+                    if (a11yStuck.value) a11yStuck.value = false
+                } else {
+                    if (waitingSince == 0L) waitingSince = System.currentTimeMillis()
+                    val stuck = System.currentTimeMillis() - waitingSince > 6000
+                    if (stuck) {
+                        // 静默修复每 15 秒重试一次：部分 ROM 要等系统扫完已启用列表才肯重新绑定。
+                        val nowMs = System.currentTimeMillis()
+                        if (nowMs - lastRetryAt > 15_000) {
+                            lastRetryAt = nowMs
+                            com.cone.agent.vision.AccessibilityState.tryReenable(context)
+                        }
+                        if (!a11yStuck.value) a11yStuck.value = true
+                    }
+                }
+            }
+        }
+    }
+
+    /** User pressed “重新开启”: try the silent fix first, then fall back to the system screen. */
+    fun reenableAccessibility() {
+        if (!com.cone.agent.vision.AccessibilityState.tryReenable(context)) {
+            // Retail devices cannot write the secure setting; the caller opens system settings.
+        }
+        refresh()
+    }
 
     val environment: StateFlow<EnvironmentStatus> = combine(
         bridge.connected,
         captureManager.running,
         settingsRepository.selectedModel,
-        refreshTick,
-    ) { accessibility, capture, model, _ ->
+        combine(refreshTick, a11yStuck) { tick, stuck -> tick to stuck },
+    ) { accessibility, capture, model, tickAndStuck ->
         EnvironmentStatus(
             modelReady = model != null,
             accessibilityReady = accessibility,
             // 系统里开着但服务还没绑回来 = 重启中（见 AccessibilityState）
             accessibilityRestarting = !accessibility &&
-                com.cone.agent.vision.AccessibilityState.isEnabledInSettings(context),
+                com.cone.agent.vision.AccessibilityState.isEnabledInSettings(context) &&
+                !tickAndStuck.second,
+            accessibilityStuck = !accessibility && tickAndStuck.second,
             overlayReady = canDrawOverlays(),
             captureReady = capture,
             notificationsReady = notificationsGranted(),
@@ -55,33 +96,8 @@ class PermissionsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), EnvironmentStatus())
 
-    /** Whether the always-on wake-word listener is enabled (persisted). */
-    val wakeWordEnabled: StateFlow<Boolean> = settingsRepository.wakeWordEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    /** Wake-word sensitivity in [0f, 1f] (persisted); only surfaced while wake word is on. */
-    val wakeWordSensitivity: StateFlow<Float> = settingsRepository.wakeWordSensitivity
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Constants.DEFAULT_WAKE_SENSITIVITY)
-
     fun refresh() {
         refreshTick.value += 1
-    }
-
-    /** Toggle the wake-word listener: persist the preference and start/stop the foreground service. */
-    fun setWakeWord(enabled: Boolean) {
-        viewModelScope.launch { settingsRepository.setWakeWordEnabled(enabled) }
-        if (enabled) {
-            // Only meaningful with the mic granted; otherwise the service self-stops until it is.
-            if (microphoneGranted()) WakeWordService.start(context)
-        } else {
-            WakeWordService.stop(context)
-        }
-    }
-
-    /** Adjust wake sensitivity: persist it and apply live to the running listener immediately. */
-    fun setWakeSensitivity(value: Float) {
-        WakeWordService.sensitivity = value
-        viewModelScope.launch { settingsRepository.setWakeWordSensitivity(value) }
     }
 
     private fun canDrawOverlays(): Boolean =

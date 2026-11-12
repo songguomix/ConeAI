@@ -6,35 +6,37 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.res.stringResource
 import com.cone.agent.R
 import com.cone.agent.ui.SystemActions
+import com.cone.agent.ui.theme.ConeShapes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,9 +46,8 @@ fun PermissionsScreen(
     viewModel: PermissionsViewModel = hiltViewModel(),
 ) {
     val env by viewModel.environment.collectAsStateWithLifecycle()
-    val wakeOn by viewModel.wakeWordEnabled.collectAsStateWithLifecycle()
-    val wakeSensitivity by viewModel.wakeWordSensitivity.collectAsStateWithLifecycle()
 
+    // 从系统设置页返回时重新读取权限状态，否则授予后这一页仍显示「未授权」。
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
         onPauseOrDispose { }
@@ -78,6 +79,24 @@ fun PermissionsScreen(
                 modifier = Modifier.padding(bottom = 12.dp),
             )
 
+            // 9 项检查排成一列时，用户看不出「还差几项」；顶部给一个进度总览。
+            // 唤醒词是可选功能，不进这份清单，所以分母就是清单本身的条数。
+            val readinessChecks = listOf(
+                env.modelReady,
+                env.accessibilityReady,
+                env.overlayReady,
+                env.captureReady,
+                env.notificationsReady,
+                env.microphoneReady,
+                env.appListReady,
+                env.assistantReady,
+            )
+            ReadinessCard(
+                readyCount = readinessChecks.count { it },
+                total = readinessChecks.size,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+
             PermissionItem(
                 title = stringResource(R.string.perm_model_title),
                 description = stringResource(R.string.perm_model_desc),
@@ -88,15 +107,21 @@ fun PermissionsScreen(
             PermissionItem(
                 title = stringResource(R.string.perm_a11y_title),
                 description = stringResource(
-                    if (env.accessibilityRestarting) {
-                        R.string.perm_a11y_restarting
-                    } else {
-                        R.string.perm_a11y_desc
+                    when {
+                        env.accessibilityStuck -> R.string.perm_a11y_stuck
+                        env.accessibilityRestarting -> R.string.perm_a11y_restarting
+                        else -> R.string.perm_a11y_desc
                     },
                 ),
                 granted = env.accessibilityReady,
-                actionLabel = stringResource(R.string.perm_go_enable),
-                onAction = systemActions.openAccessibilitySettings,
+                actionLabel = stringResource(
+                    if (env.accessibilityStuck) R.string.perm_reenable else R.string.perm_go_enable,
+                ),
+                onAction = {
+                    // 先试静默修复（ADB 授权设备直接生效）；零售机打不开设置项，就带用户去系统页。
+                    viewModel.reenableAccessibility()
+                    systemActions.openAccessibilitySettings()
+                },
             )
             PermissionItem(
                 title = stringResource(R.string.perm_overlay_title),
@@ -140,28 +165,12 @@ fun PermissionsScreen(
                 actionLabel = stringResource(R.string.perm_go_settings),
                 onAction = systemActions.openAssistantSettings,
             )
-            // Wake word is the last item (item 8): it depends on the mic above and is opt-in.
-            WakeWordToggleItem(
-                title = stringResource(R.string.perm_wake_title),
-                description = stringResource(R.string.perm_wake_desc),
-                checked = wakeOn,
-                onCheckedChange = { on ->
-                    // Wake word needs the mic; if missing, request it (the service starts once granted).
-                    if (on && !env.microphoneReady) systemActions.requestMicrophonePermission()
-                    viewModel.setWakeWord(on)
-                },
-            )
-            // Sensitivity only matters when the listener is on, so it's revealed under the toggle.
-            if (wakeOn) {
-                WakeSensitivityItem(
-                    sensitivity = wakeSensitivity,
-                    onChange = viewModel::setWakeSensitivity,
-                )
-            }
-
             if (env.captureReady) {
                 OutlinedButton(
                     onClick = systemActions.stopScreenCapture,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 ) { Text(stringResource(R.string.perm_stop_capture)) }
             }
@@ -169,74 +178,49 @@ fun PermissionsScreen(
     }
 }
 
-/** A switch-style row (not a one-shot permission): toggles the always-on wake-word listener. */
+/**
+ * 就绪进度总览：标题右边是 `已就绪 N / 8`，下面一条线性进度条。
+ *
+ * 用 Material 3 的 LinearProgressIndicator，而不是自己画一条：深浅色、无障碍播报都跟着主题走。
+ */
 @Composable
-private fun WakeWordToggleItem(
-    title: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+private fun ReadinessCard(
+    readyCount: Int,
+    total: Int,
+    modifier: Modifier = Modifier,
 ) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(checked = checked, onCheckedChange = onCheckedChange)
-        }
-    }
-}
-
-/** Slider revealed under the wake toggle: tunes how easily the wake phrase triggers (低 ↔ 高). */
-@Composable
-private fun WakeSensitivityItem(
-    sensitivity: Float,
-    onChange: (Float) -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    Card(shape = ConeShapes.Card, modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(stringResource(R.string.perm_wake_sensitivity_title), style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(R.string.perm_wake_sensitivity_desc),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Slider(
-                value = sensitivity,
-                onValueChange = onChange,
-                valueRange = 0f..1f,
-                // Two intermediate stops → three positions (低 / 中 / 高), matching the match tiers.
-                steps = 1,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    stringResource(R.string.perm_wake_sensitivity_low),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = stringResource(R.string.perm_ready_title),
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    stringResource(R.string.perm_wake_sensitivity_high),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = stringResource(R.string.perm_ready_count, readyCount, total),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
+            LinearProgressIndicator(
+                progress = { if (total == 0) 0f else readyCount.toFloat() / total },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
         }
     }
 }
 
+/**
+ * 一项系统能力：左侧状态图标（已授权 = 主题色对勾，未授权 = 灰色空心圈），
+ * 右侧标题与说明；未授权时把按钮放在说明下面整行可点的位置。
+ *
+ * 原来是「图标 + 文字 + 按钮」挤在一行，中文说明稍长就被按钮压成窄窄一条；
+ * 现在按钮换到文字下方（FilledTonalButton），说明拿满剩余宽度。
+ */
 @Composable
 private fun PermissionItem(
     title: String,
@@ -245,26 +229,38 @@ private fun PermissionItem(
     actionLabel: String?,
     onAction: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = if (granted) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                contentDescription = null,
-                tint = if (granted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Card(shape = ConeShapes.Card, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(
+                    imageVector = if (granted) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                    contentDescription = stringResource(
+                        if (granted) R.string.perm_status_granted else R.string.perm_status_missing,
+                    ),
+                    // 之前这里是硬编码的 0xFF2E7D32 绿色，和动态取色 / 深色模式都对不上；
+                    // 改成主题的 primary，跟随壁纸与明暗切换。
+                    tint = if (granted) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(24.dp),
                 )
+                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
             if (!granted && actionLabel != null) {
-                OutlinedButton(onClick = onAction) { Text(actionLabel) }
+                FilledTonalButton(
+                    onClick = onAction,
+                    modifier = Modifier.padding(start = 36.dp, top = 12.dp),
+                ) { Text(actionLabel) }
             }
         }
     }

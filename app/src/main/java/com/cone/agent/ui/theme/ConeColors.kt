@@ -18,6 +18,8 @@ data class ConeColorTokens(
     val outline: Int,
     val error: Int,
     val onError: Int,
+    /** M3 scrim — used for translucent overlays (assistant pill backdrop). */
+    val scrim: Int,
 )
 
 /**
@@ -44,6 +46,7 @@ object ConeColors {
             outline = scheme.outline.toArgb(),
             error = scheme.error.toArgb(),
             onError = scheme.onError.toArgb(),
+            scrim = scheme.scrim.toArgb(),
         )
     }
 }

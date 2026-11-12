@@ -78,6 +78,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { memoryRepository.update(id, content) }
     }
 
+    /** UI language, edited here since the drawer no longer hosts a language picker. */
+    val appLanguage: StateFlow<String> = settingsRepository.appLanguage
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "zh")
+
+    fun setLanguage(tag: String) {
+        viewModelScope.launch { settingsRepository.setAppLanguage(tag) }
+    }
+
     fun setScreenMode(value: ScreenMode) {
         viewModelScope.launch { settingsRepository.setScreenMode(value) }
     }

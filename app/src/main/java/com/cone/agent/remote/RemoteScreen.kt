@@ -1,9 +1,13 @@
 package com.cone.agent.remote
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
+import android.view.Window
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,8 +27,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -46,39 +51,50 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,6 +109,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -125,7 +142,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
-
 /**
  * The remote area mirrors ConeCode's own palette (warm "Claude" theme), supporting both light and
  * dark — see `src/index.css` in the desktop project. The phone follows the **desktop's** resolved
@@ -133,27 +149,31 @@ import kotlinx.serialization.json.jsonObject
  * system setting. Provided via [LocalRemotePalette].
  */
 data class RemotePalette(
-    val bg0: Color, val bg1: Color, val bg2: Color, val bg3: Color,
+    val bg0: Color, val bg1: Color, val bg2: Color, val bg3: Color, val bg4: Color,
     val border: Color, val text: Color, val muted: Color, val faint: Color,
-    val accent: Color, val accentSoft: Color, val danger: Color, val amber: Color,
+    val accent: Color, val accentSoft: Color, val danger: Color, val amber: Color, val success: Color,
 )
 
 private val DarkPalette = RemotePalette(
     bg0 = Color(0xFF1A1915), bg1 = Color(0xFF14130F), bg2 = Color(0xFF242320), bg3 = Color(0xFF2E2D28),
+    bg4 = Color(0xFF3A3833),
     border = Color(0xFF353330), text = Color(0xFFF0EDE8), muted = Color(0xFFA5A09A), faint = Color(0xFF706B65),
     accent = Color(0xFFDA7756), accentSoft = Color(0x26DA7756), danger = Color(0xFFE05A4A), amber = Color(0xFFD4993E),
+    success = Color(0xFF57B37A),
 )
 
 private val LightPalette = RemotePalette(
     bg0 = Color(0xFFFAF6F1), bg1 = Color(0xFFF0EBE3), bg2 = Color(0xFFFFFFFF), bg3 = Color(0xFFEDE8E0),
+    bg4 = Color(0xFFDDD7CE),
     border = Color(0xFFE8E2DA), text = Color(0xFF1A1612), muted = Color(0xFF6B6560), faint = Color(0xFF9B9590),
     accent = Color(0xFFC96442), accentSoft = Color(0x1AC96442), danger = Color(0xFFC43E2E), amber = Color(0xFFB8762B),
+    success = Color(0xFF2D8A56),
 )
 
 internal val LocalRemotePalette = staticCompositionLocalOf { DarkPalette }
 
 /** Which mirror surface is showing: the chat, the file browser, or the terminal. */
-internal enum class RemoteTab { CHAT, FILES, TERMINAL }
+internal enum class RemoteTab { CHAT, CHANGES, FILES, TERMINAL }
 
 /**
  * ConeAI sidebar entry that turns the phone into a remote control for a ConeCode desktop session.
@@ -166,6 +186,15 @@ fun RemoteScreen(
     viewModel: RemoteViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // 回到远程页时把上次的会话接回来（连接本身活在应用级单例里，不会因为离开页面而消失）。
+    LaunchedEffect(Unit) { viewModel.restore() }
+    // 镜像画面里有电脑桌面的全部内容：连接期间禁止截屏与最近任务缩略图。
+    val window = rememberWindow()
+    DisposableEffect(state.showMirror) {
+        if (state.showMirror) window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
     // Once connected, follow the desktop's resolved theme so the mirror stays visually aligned.
     val desktopDark = state.snapshot?.theme == "dark"
     val palette = if (state.snapshot?.theme != null) {
@@ -418,7 +447,7 @@ private fun RememberedRow(label: String, enabled: Boolean, onClick: () -> Unit) 
 }
 
 // ---------------------------------------------------------------------------
-// Mirror screen (live ConeCode session at phone proportions)
+// Mirror screen (live ConeCode session, responsive phone / pad shells)
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -452,68 +481,30 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
         }
         return
     }
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    val layout = rememberRemoteLayout()
+    val twoPane = rememberRemoteTwoPane()
     var showModelPicker by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(RemoteTab.CHAT) }
-    BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
+    val onPickModel: () -> Unit = { showModelPicker = true }
 
-    val title = when (tab) {
-        RemoteTab.CHAT -> snap.conversations.firstOrNull { it.id == snap.activeConversationId }
-            ?.title?.takeIf { it.isNotBlank() } ?: "ConeCode"
-        RemoteTab.FILES -> stringResource(R.string.remote_files)
-        RemoteTab.TERMINAL -> stringResource(R.string.remote_terminal)
-    }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen,
-        drawerContent = {
-            ConversationDrawer(
-                snapshot = snap,
-                endpointLabel = state.endpointLabel,
-                currentTab = tab,
-                onSelectTab = { tab = it; scope.launch { drawerState.close() } },
-                onSwitch = { id -> viewModel.switchConversation(id); tab = RemoteTab.CHAT; scope.launch { drawerState.close() } },
-                onNew = { viewModel.newConversation(); tab = RemoteTab.CHAT; scope.launch { drawerState.close() } },
-                onDelete = { id -> viewModel.deleteConversation(id) },
-                onDisconnect = { scope.launch { drawerState.close() }; viewModel.disconnect() },
-            )
-        },
-    ) {
-        Column(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
-            MirrorTopBar(
-                title = title,
-                modelName = snap.model?.name,
-                showModel = tab == RemoteTab.CHAT,
-                connected = state.phase == RemotePhase.CONNECTED,
-                onMenu = { scope.launch { drawerState.open() } },
-                onPickModel = { showModelPicker = true },
-            )
-            when (tab) {
-                RemoteTab.CHAT -> {
-                    MessageList(snapshot = snap, modifier = Modifier.weight(1f))
-                    Panels(snapshot = snap, viewModel = viewModel)
-                    Composer(
-                        viewModel = viewModel,
-                        rootPath = snap.rootPath,
-                        isStreaming = snap.isStreaming,
-                        onSend = viewModel::sendMessage,
-                        onStop = viewModel::stopGeneration,
-                    )
-                }
-                RemoteTab.FILES -> FileBrowser(
-                    viewModel = viewModel,
-                    rootPath = snap.rootPath,
-                    modifier = Modifier.weight(1f),
-                )
-                RemoteTab.TERMINAL -> TerminalView(
-                    viewModel = viewModel,
-                    rootPath = snap.rootPath,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
+    when (layout) {
+        RemoteLayout.PAD -> PadMirror(
+            state = state,
+            snapshot = snap,
+            viewModel = viewModel,
+            tab = tab,
+            onTab = { tab = it },
+            twoPane = twoPane,
+            onPickModel = onPickModel,
+        )
+        RemoteLayout.PHONE -> PhoneMirror(
+            state = state,
+            snapshot = snap,
+            viewModel = viewModel,
+            tab = tab,
+            onTab = { tab = it },
+            onPickModel = onPickModel,
+        )
     }
 
     if (showModelPicker) {
@@ -529,66 +520,696 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Responsive shells: phone (bottom bar + drawer) vs pad (nav rail + optional
+// second pane). Both share the same panes, so behaviour cannot drift.
+// ---------------------------------------------------------------------------
+
+/** The hosting window, so we can toggle FLAG_SECURE while the mirror is on screen. */
 @Composable
-private fun MirrorTopBar(
+private fun rememberWindow(): Window? {
+    val context = LocalContext.current
+    return remember(context) {
+        var ctx: Context? = context
+        while (ctx is ContextWrapper) {
+            if (ctx is Activity) return@remember ctx.window
+            ctx = ctx.baseContext
+        }
+        null
+    }
+}
+
+/** 顶部标题始终是当前会话名，页别由下方标签条表达（与桌面一致）。 */
+@Composable
+private fun conversationTitle(snapshot: RemoteSnapshot): String =
+    snapshot.conversations.firstOrNull { it.id == snapshot.activeConversationId }
+        ?.title?.takeIf { it.isNotBlank() }
+        ?: snapshot.conversations.firstOrNull()?.title?.takeIf { it.isNotBlank() }
+        ?: "ConeCode"
+
+private fun RemoteTab.icon(): ImageVector = when (this) {
+    RemoteTab.CHAT -> Icons.Filled.ChatBubbleOutline
+    RemoteTab.CHANGES -> Icons.Filled.Difference
+    RemoteTab.FILES -> Icons.Filled.Folder
+    RemoteTab.TERMINAL -> Icons.Filled.Terminal
+}
+
+private fun RemoteTab.labelRes(): Int = when (this) {
+    RemoteTab.CHAT -> R.string.remote_tab_chat
+    RemoteTab.CHANGES -> R.string.remote_changes
+    RemoteTab.FILES -> R.string.remote_files
+    RemoteTab.TERMINAL -> R.string.remote_terminal
+}
+
+/** 对话主体：消息流 + 待办/待确认浮层 + 输入框。手机与平板共用。 */
+@Composable
+private fun ChatPane(snapshot: RemoteSnapshot, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxSize()) {
+        MessageList(snapshot = snapshot, modifier = Modifier.weight(1f))
+        Panels(snapshot = snapshot, viewModel = viewModel)
+        Composer(
+            viewModel = viewModel,
+            rootPath = snapshot.rootPath,
+            isStreaming = snapshot.isStreaming,
+            onSend = viewModel::sendMessage,
+            onStop = viewModel::stopGeneration,
+        )
+    }
+}
+
+/**
+ * 桌面版式的外壳：顶部标题栏 + 工作台标签条，左侧会话栏（手机是抽屉，平板常驻）。
+ * 这是对着桌面端 ConeCode 的 AppShell / WorkbenchTabs 做的：同样是「侧栏 + 标签页」，
+ * 不再用手机常见的底部导航，两端看到的层级关系保持一致。
+ */
+@Composable
+private fun MirrorHeader(
     title: String,
     modelName: String?,
-    showModel: Boolean,
     connected: Boolean,
-    onMenu: () -> Unit,
+    insecure: Boolean,
+    tab: RemoteTab,
+    changeCount: Int,
+    onTab: (RemoteTab) -> Unit,
+    onMenu: (() -> Unit)?,
     onPickModel: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
-    Column {
+    Column(modifier = Modifier.fillMaxWidth().background(cx.bg1)) {
         Row(
-            modifier = Modifier.fillMaxWidth().background(cx.bg0).statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(start = 6.dp, end = 10.dp, top = 4.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onMenu) {
-                Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.remote_conversations), tint = cx.text)
+            if (onMenu != null) {
+                IconButton(onClick = onMenu, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Filled.Menu,
+                        contentDescription = stringResource(R.string.remote_conversations),
+                        tint = cx.muted,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(if (connected) cx.success else cx.amber),
+                )
+                Spacer(Modifier.size(8.dp))
             }
             Text(
                 title,
                 color = cx.text,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (showModel) {
-                // Tap the model chip to switch models ("支持修改模型").
+            if (onMenu != null) Spacer(Modifier.size(4.dp))
+            if (insecure) {
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onPickModel)
-                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                        .background(cx.amber.copy(alpha = 0.18f))
+                        .border(1.dp, cx.amber, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 7.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Icon(Icons.Filled.LockOpen, contentDescription = null, tint = cx.amber, modifier = Modifier.size(12.dp))
+                    Spacer(Modifier.size(4.dp))
                     Text(
-                        modelName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.remote_pick_model),
-                        color = cx.muted,
-                        fontSize = 11.sp,
+                        stringResource(R.string.remote_insecure_chip),
+                        color = cx.amber,
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.widthIn(max = 160.dp),
                     )
-                    Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cx.muted, modifier = Modifier.size(16.dp))
                 }
-                Spacer(Modifier.size(4.dp))
+                Spacer(Modifier.size(6.dp))
             }
-            StatusDot(connected = connected)
-            Spacer(Modifier.size(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(cx.bg3)
+                    .border(1.dp, cx.border, RoundedCornerShape(8.dp))
+                    .clickable(onClick = onPickModel)
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(if (connected) cx.success else cx.faint),
+                )
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    modelName ?: stringResource(R.string.remote_no_models),
+                    color = cx.muted,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.size(4.dp))
+                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cx.faint, modifier = Modifier.size(14.dp))
+            }
+        }
+        WorkbenchTabStrip(tab = tab, changeCount = changeCount, onTab = onTab)
+    }
+}
+
+/** 桌面 WorkbenchTabs 的迷你版：图标 + 名称 + 待确认数量角标 + 选中下划线。 */
+@Composable
+private fun WorkbenchTabStrip(tab: RemoteTab, changeCount: Int, onTab: (RemoteTab) -> Unit) {
+    val cx = LocalRemotePalette.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+            RemoteTab.values().forEach { entry ->
+                val active = tab == entry
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                        .clickable { onTab(entry) },
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 7.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            entry.icon(),
+                            contentDescription = null,
+                            tint = if (active) cx.accent else cx.faint,
+                            modifier = Modifier.size(13.dp),
+                        )
+                        Spacer(Modifier.size(5.dp))
+                        Text(
+                            stringResource(entry.labelRes()),
+                            color = if (active) cx.text else cx.muted,
+                            fontSize = 12.sp,
+                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                        )
+                        if (entry == RemoteTab.CHANGES && changeCount > 0) {
+                            Spacer(Modifier.size(4.dp))
+                            Text(
+                                changeCount.toString(),
+                                color = cx.accent,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .background(cx.accentSoft)
+                                    .padding(horizontal = 4.dp, vertical = 0.5.dp),
+                            )
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(if (active) cx.accent else Color.Transparent),
+                    )
+                }
+            }
         }
         HorizontalDivider(color = cx.border)
     }
 }
 
+/** 标签页内容：两端复用，只有文件页在宽屏下拆成两栏。 */
 @Composable
-private fun StatusDot(connected: Boolean) {
+private fun RemoteTabContent(
+    tab: RemoteTab,
+    snapshot: RemoteSnapshot,
+    viewModel: RemoteViewModel,
+    modifier: Modifier = Modifier,
+    twoPane: Boolean = false,
+    terminal: TerminalSession,
+) {
     val cx = LocalRemotePalette.current
-    Box(modifier = Modifier.size(9.dp).clip(CircleShape).background(if (connected) cx.accent else cx.amber))
+    var selectedFile by remember(snapshot.rootPath) { mutableStateOf<String?>(null) }
+    Box(modifier = modifier.fillMaxSize()) {
+        when (tab) {
+            RemoteTab.CHAT -> ChatPane(snapshot, viewModel)
+            RemoteTab.CHANGES -> ChangesPage(snapshot, viewModel)
+            RemoteTab.FILES -> Row(modifier = Modifier.fillMaxSize()) {
+                if (twoPane) {
+                    FileBrowser(
+                        viewModel = viewModel,
+                        rootPath = snapshot.rootPath,
+                        modifier = Modifier.width(300.dp).fillMaxHeight(),
+                        onPick = { selectedFile = it },
+                    )
+                    VerticalDivider(color = cx.border)
+                    val file = selectedFile
+                    if (file != null) {
+                        FileViewer(
+                            viewModel = viewModel,
+                            path = file,
+                            onBack = { selectedFile = null },
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        FilePanePlaceholder(Modifier.weight(1f))
+                    }
+                } else {
+                    FileBrowser(viewModel, snapshot.rootPath, Modifier.fillMaxSize())
+                }
+            }
+            RemoteTab.TERMINAL -> TerminalView(viewModel, snapshot.rootPath, terminal, Modifier.fillMaxSize())
+        }
+    }
+}
+
+@Composable
+private fun PhoneMirror(
+    state: RemoteUiState,
+    snapshot: RemoteSnapshot,
+    viewModel: RemoteViewModel,
+    tab: RemoteTab,
+    onTab: (RemoteTab) -> Unit,
+    onPickModel: () -> Unit,
+) {
+    val cx = LocalRemotePalette.current
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val terminal = rememberTerminalSession()
+    BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet(drawerContainerColor = cx.bg1, modifier = Modifier.fillMaxWidth(0.82f)) {
+                ConversationSidebar(
+                    snapshot = snapshot,
+                    endpointLabel = state.endpointLabel,
+                    onSwitch = { id ->
+                        viewModel.switchConversation(id)
+                        onTab(RemoteTab.CHAT)
+                        scope.launch { drawerState.close() }
+                    },
+                    onNew = {
+                        viewModel.newConversation()
+                        onTab(RemoteTab.CHAT)
+                        scope.launch { drawerState.close() }
+                    },
+                    onDelete = { id -> viewModel.deleteConversation(id) },
+                    onDisconnect = {
+                        scope.launch { drawerState.close() }
+                        viewModel.disconnect()
+                    },
+                )
+            }
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
+            MirrorHeader(
+                title = conversationTitle(snapshot),
+                modelName = snapshot.model?.name,
+                connected = state.phase == RemotePhase.CONNECTED,
+                insecure = state.insecure,
+                tab = tab,
+                changeCount = snapshot.changes.count { it.status == "pending" },
+                onTab = onTab,
+                onMenu = { scope.launch { drawerState.open() } },
+                onPickModel = onPickModel,
+            )
+            RemoteTabContent(tab, snapshot, viewModel, Modifier.weight(1f), terminal = terminal)
+        }
+    }
+}
+
+@Composable
+private fun PadMirror(
+    state: RemoteUiState,
+    snapshot: RemoteSnapshot,
+    viewModel: RemoteViewModel,
+    tab: RemoteTab,
+    onTab: (RemoteTab) -> Unit,
+    twoPane: Boolean,
+    onPickModel: () -> Unit,
+) {
+    val cx = LocalRemotePalette.current
+    val terminal = rememberTerminalSession()
+    Row(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
+        Box(modifier = Modifier.width(276.dp).fillMaxHeight()) {
+            ConversationSidebar(
+                snapshot = snapshot,
+                endpointLabel = state.endpointLabel,
+                onSwitch = {
+                    viewModel.switchConversation(it)
+                    onTab(RemoteTab.CHAT)
+                },
+                onNew = {
+                    viewModel.newConversation()
+                    onTab(RemoteTab.CHAT)
+                },
+                onDelete = { viewModel.deleteConversation(it) },
+                onDisconnect = { viewModel.disconnect() },
+            )
+        }
+        VerticalDivider(color = cx.border)
+        Column(modifier = Modifier.weight(1f)) {
+            MirrorHeader(
+                title = conversationTitle(snapshot),
+                modelName = snapshot.model?.name,
+                connected = state.phase == RemotePhase.CONNECTED,
+                insecure = state.insecure,
+                tab = tab,
+                changeCount = snapshot.changes.count { it.status == "pending" },
+                onTab = onTab,
+                onMenu = null,
+                onPickModel = onPickModel,
+            )
+            RemoteTabContent(tab, snapshot, viewModel, Modifier.weight(1f), twoPane = twoPane, terminal = terminal)
+        }
+    }
+}
+
+/**
+ * 左侧会话栏，等同桌面 Sidebar：品牌行 + 新对话、会话分组标题、会话列表、底部连接信息。
+ * 手机放进抽屉，平板直接常驻。
+ */
+@Composable
+private fun ConversationSidebar(
+    snapshot: RemoteSnapshot,
+    endpointLabel: String?,
+    onSwitch: (String) -> Unit,
+    onNew: () -> Unit,
+    onDelete: (String) -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cx = LocalRemotePalette.current
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(cx.bg1)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(cx.accent),
+            )
+            Spacer(Modifier.size(7.dp))
+            Text(
+                "CONECODE",
+                color = cx.faint,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 0.6.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(cx.accentSoft)
+                    .border(1.dp, cx.accent.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+                    .clickable(onClick = onNew)
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null, tint = cx.accent, modifier = Modifier.size(13.dp))
+                Spacer(Modifier.size(4.dp))
+                Text(stringResource(R.string.remote_new_chat), color = cx.accent, fontSize = 11.5.sp)
+            }
+        }
+        Spacer(Modifier.size(12.dp))
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.ChatBubbleOutline, contentDescription = null, tint = cx.faint, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.size(6.dp))
+            Text(
+                stringResource(R.string.remote_conversations),
+                color = cx.muted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.size(6.dp))
+            Text(
+                snapshot.conversations.size.toString(),
+                color = cx.faint,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        ConversationList(
+            snapshot = snapshot,
+            onSwitch = onSwitch,
+            onDelete = onDelete,
+            modifier = Modifier.weight(1f),
+        )
+        HorizontalDivider(color = cx.border, modifier = Modifier.padding(vertical = 8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(9.dp))
+                .clickable(onClick = onDisconnect)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.LinkOff, contentDescription = null, tint = cx.danger, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.size(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.remote_disconnect), color = cx.danger, fontSize = 12.5.sp)
+                endpointLabel?.let {
+                    Text(
+                        it,
+                        color = cx.faint,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 会话列表：桌面侧栏的会话行样式，抽屉与平板常驻侧栏共用。 */
+@Composable
+private fun ConversationList(
+    snapshot: RemoteSnapshot,
+    onSwitch: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cx = LocalRemotePalette.current
+    var pendingDelete by remember { mutableStateOf<RemoteConversation?>(null) }
+    Column(modifier = modifier) {
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(snapshot.conversations, key = { it.id }) { conv ->
+                val active = conv.id == snapshot.activeConversationId
+                val running = conv.isRunning || conv.id == snapshot.runningConversationId
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 1.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (active) cx.bg3 else Color.Transparent)
+                        .clickable { onSwitch(conv.id) }
+                        .padding(start = 9.dp, end = 2.dp, top = 7.dp, bottom = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // 桌面用左侧 2dp 竖条标记当前会话。
+                    Box(
+                        modifier = Modifier
+                            .size(width = 2.dp, height = 18.dp)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(if (active) cx.accent else Color.Transparent),
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (running) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(5.dp)
+                                        .clip(CircleShape)
+                                        .background(cx.accent),
+                                )
+                                Spacer(Modifier.size(6.dp))
+                            }
+                            Text(
+                                conv.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.remote_new_chat),
+                                color = if (active) cx.text else cx.muted,
+                                fontSize = 13.sp,
+                                fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (conv.changedFiles.isNotEmpty()) {
+                            Spacer(Modifier.size(2.dp))
+                            Text(
+                                conv.changedFiles.joinToString(" · "),
+                                color = cx.faint,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    IconButton(onClick = { pendingDelete = conv }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Filled.DeleteOutline,
+                            contentDescription = stringResource(R.string.cd_delete),
+                            tint = cx.faint,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    pendingDelete?.let { target ->
+        ConfirmDialog(
+            title = stringResource(R.string.delete_conv_title),
+            message = stringResource(R.string.delete_conv_msg),
+            confirmLabel = stringResource(R.string.action_delete),
+            onConfirm = {
+                onDelete(target.id)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
+        )
+    }
+}
+
+/**
+ * 变更页：桌面 ConeCode 的变更面板整页搬过来——待办清单、待确认变更（可单条 / 批量批准），
+ * 以及已应用、已撤回、失败的历史变更。此前手机上只能看到待确认的那几条。
+ */
+@Composable
+private fun ChangesPage(
+    snapshot: RemoteSnapshot,
+    viewModel: RemoteViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val cx = LocalRemotePalette.current
+    val pending = remember(snapshot.changes) { snapshot.changes.filter { it.status == "pending" } }
+    val history = remember(snapshot.changes) { snapshot.changes.filter { it.status != "pending" } }
+
+    if (snapshot.todos.isEmpty() && pending.isEmpty() && history.isEmpty()) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Filled.Difference, contentDescription = null, tint = cx.faint, modifier = Modifier.size(30.dp))
+                Spacer(Modifier.size(10.dp))
+                Text(stringResource(R.string.remote_no_changes), color = cx.muted, fontSize = 13.sp)
+            }
+        }
+        return
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        if (snapshot.todos.isNotEmpty()) TodoPanel(snapshot.todos)
+        if (pending.isNotEmpty()) ApprovalPanel(pending, viewModel)
+        if (history.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.remote_changes_history, history.size),
+                color = cx.faint,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 4.dp),
+            )
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+            ) {
+                items(history, key = { it.id.ifBlank { it.filePath + it.status } }) { change ->
+                    ChangeHistoryCard(change)
+                }
+            }
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+    }
+}
+
+/** 已处理的变更（只读，带状态）。 */
+@Composable
+private fun ChangeHistoryCard(change: RemoteChange) {
+    val cx = LocalRemotePalette.current
+    val isCommand = change.filePath == "[Command]"
+    val label = if (isCommand) change.newCode.orEmpty() else fileName(change.filePath)
+    val kind = if (change.kind == "exec") "Run" else (change.kind ?: "edit")
+    val statusColor = when (change.status) {
+        "applied" -> cx.accent
+        "failed" -> cx.danger
+        else -> cx.muted
+    }
+    val statusLabel = when (change.status) {
+        "applied" -> stringResource(R.string.remote_change_applied)
+        "reverted" -> stringResource(R.string.remote_change_reverted)
+        "failed" -> stringResource(R.string.remote_change_failed)
+        else -> change.status
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(cx.bg2)
+            .border(1.dp, cx.border, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                kind,
+                color = cx.muted,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(cx.bg3)
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(
+                label,
+                color = cx.text,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.size(8.dp))
+            Text(statusLabel, color = statusColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
+        if (!isCommand && change.description?.isNotBlank() == true) {
+            Spacer(Modifier.size(5.dp))
+            Text(
+                change.description,
+                color = cx.muted,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilePanePlaceholder(modifier: Modifier = Modifier) {
+    val cx = LocalRemotePalette.current
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(stringResource(R.string.remote_pick_file), color = cx.faint, fontSize = 13.sp)
+    }
 }
 
 @Composable
@@ -639,11 +1260,11 @@ private fun MessageRow(message: RemoteMessage) {
                 modifier = Modifier
                     .widthIn(max = maxBubble)
                     .clip(shape)
-                    .background(cx.bg3)
+                    .background(cx.bg2)
                     .border(1.dp, cx.border, shape)
                     .padding(horizontal = 13.dp, vertical = 9.dp),
             ) {
-                Text(proseAnnotated(message.content, cx.bg2), color = cx.text, fontSize = 15.sp, lineHeight = 22.sp)
+                Text(proseAnnotated(message.content, cx.bg3), color = cx.text, fontSize = 15.sp, lineHeight = 22.sp)
             }
         }
     } else {
@@ -773,38 +1394,123 @@ private fun Panels(snapshot: RemoteSnapshot, viewModel: RemoteViewModel) {
     }
 }
 
+/**
+ * 待办清单：对齐桌面 TodoList —— 折叠状态下就是一行「待办 · 当前任务 + 进度条 + 3/5」，
+ * 展开才列出全部条目，不再一直占着聊天区域。
+ */
 @Composable
 private fun TodoPanel(todos: List<RemoteTodo>) {
     val cx = LocalRemotePalette.current
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.30f).dp
+    var expanded by remember { mutableStateOf(false) }
+    val done = todos.count { it.status == "completed" }
+    val total = todos.size
+    val allDone = done == total
+    val current = todos.firstOrNull { it.status == "in_progress" } ?: todos.firstOrNull { it.status != "completed" }
+    val fraction = if (total == 0) 0f else done.toFloat() / total
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(cx.bg1)
-            .heightIn(max = maxHeight)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(cx.bg2)
+            .border(1.dp, cx.border, RoundedCornerShape(14.dp)),
     ) {
-        HorizontalDivider(color = cx.border, modifier = Modifier.padding(bottom = 6.dp))
-        todos.forEach { todo ->
-            val mark = when (todo.status) {
-                "completed" -> "✓"
-                "in_progress" -> "◐"
-                else -> "○"
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = cx.muted,
+                modifier = Modifier.size(13.dp),
+            )
+            Spacer(Modifier.size(4.dp))
+            Icon(Icons.Filled.Checklist, contentDescription = null, tint = cx.accent, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.size(5.dp))
+            Text(
+                stringResource(R.string.remote_todos),
+                color = cx.muted,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+            )
+            Spacer(Modifier.size(5.dp))
+            Text("·", color = cx.border, fontSize = 11.5.sp)
+            Spacer(Modifier.size(5.dp))
+            Text(
+                if (allDone) stringResource(R.string.remote_all_done) else current?.content.orEmpty(),
+                color = if (allDone) cx.success else cx.muted,
+                fontSize = 11.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.size(8.dp))
+            Box(
+                modifier = Modifier
+                    .width(44.dp)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(cx.bg4),
+            ) {
+                if (fraction > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fraction)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(if (allDone) cx.success else cx.accent),
+                    )
+                }
             }
-            val color = when (todo.status) {
-                "completed" -> cx.faint
-                "in_progress" -> cx.text
-                else -> cx.muted
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                Text(
-                    mark,
-                    color = if (todo.status == "in_progress") cx.accent else cx.faint,
-                    fontSize = 13.sp,
-                    modifier = Modifier.width(18.dp),
-                )
-                Text(todo.content, color = color, fontSize = 13.sp, lineHeight = 18.sp)
+            Spacer(Modifier.size(7.dp))
+            Text(
+                "$done/$total",
+                color = if (allDone) cx.success else cx.muted,
+                fontSize = 10.5.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        if (expanded) {
+            HorizontalDivider(color = cx.border)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 148.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            ) {
+                todos.forEach { todo ->
+                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        val tint = when (todo.status) {
+                            "completed" -> cx.success
+                            "in_progress" -> cx.accent
+                            else -> cx.faint
+                        }
+                        val icon = when (todo.status) {
+                            "completed" -> Icons.Filled.CheckCircle
+                            "in_progress" -> Icons.Filled.Autorenew
+                            else -> Icons.Filled.RadioButtonUnchecked
+                        }
+                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.padding(top = 1.dp).size(12.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            todo.content,
+                            color = when (todo.status) {
+                                "completed" -> cx.faint
+                                "in_progress" -> cx.text
+                                else -> cx.muted
+                            },
+                            fontSize = 11.5.sp,
+                            lineHeight = 16.sp,
+                        )
+                    }
+                }
             }
         }
     }
@@ -817,27 +1523,42 @@ private fun ApprovalPanel(pending: List<RemoteChange>, viewModel: RemoteViewMode
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(cx.bg1)
+            .background(cx.bg0)
             .heightIn(max = maxHeight)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        HorizontalDivider(color = cx.border, modifier = Modifier.padding(bottom = 10.dp))
-        if (pending.size > 1) {
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                ActionButton(
-                    text = stringResource(R.string.remote_approve_all, pending.size),
-                    kind = ButtonKind.APPROVE,
-                    modifier = Modifier.weight(1f),
-                    onClick = viewModel::approveAll,
-                )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Difference, contentDescription = null, tint = cx.amber, modifier = Modifier.size(12.dp))
+            Spacer(Modifier.size(6.dp))
+            Text(
+                stringResource(R.string.remote_pending_changes, pending.size),
+                color = cx.muted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.weight(1f))
+            if (pending.size > 1) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(7.dp))
+                        .clickable(onClick = viewModel::approveAll)
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                ) {
+                    Text(stringResource(R.string.remote_approve_all, pending.size), color = cx.accent, fontSize = 11.sp)
+                }
                 Spacer(Modifier.size(8.dp))
-                ActionButton(
-                    text = stringResource(R.string.remote_reject_all),
-                    kind = ButtonKind.REJECT,
-                    modifier = Modifier.weight(1f),
-                    onClick = viewModel::rejectAll,
-                )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(7.dp))
+                        .clickable(onClick = viewModel::rejectAll)
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                ) {
+                    Text(stringResource(R.string.remote_reject_all), color = cx.danger, fontSize = 11.sp)
+                }
             }
         }
         pending.forEach { change -> ChangeCard(change, viewModel) }
@@ -853,22 +1574,32 @@ private fun ChangeCard(change: RemoteChange, viewModel: RemoteViewModel) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .padding(bottom = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
             .background(cx.bg2)
-            .border(1.dp, cx.border, RoundedCornerShape(10.dp))
+            .border(1.dp, cx.border, RoundedCornerShape(14.dp))
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(kind.uppercase(), color = cx.accent, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            Text(
+                kind,
+                color = cx.muted,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(cx.bg3)
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
+            )
             Spacer(Modifier.size(8.dp))
             Text(
                 label,
                 color = cx.text,
-                fontSize = 13.sp,
+                fontSize = 12.5.sp,
                 fontFamily = FontFamily.Monospace,
                 maxLines = if (isCommand) 3 else 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
         }
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -899,14 +1630,14 @@ private fun ActionButton(text: String, kind: ButtonKind, modifier: Modifier = Mo
     val fg = if (kind == ButtonKind.APPROVE) cx.accent else cx.danger
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(bg)
-            .border(1.dp, borderColor, RoundedCornerShape(9.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 9.dp),
+            .padding(vertical = 7.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = fg, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -928,6 +1659,7 @@ private fun Composer(
     var text by rememberSaveable { mutableStateOf("") }
     var uploading by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
+    var showAttach by remember { mutableStateOf(false) }
     val canSend = text.isNotBlank()
 
     // Upload a phone file to the desktop, then insert its saved path as context.
@@ -950,33 +1682,84 @@ private fun Composer(
         }
     }
 
-    Column {
-        HorizontalDivider(color = cx.border)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(cx.bg0)
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
+    ) {
+        // 桌面在输入框上方显示当前工作目录，这里保持一致。
+        rootPath?.let { path ->
+            Row(
+                modifier = Modifier.padding(start = 6.dp, bottom = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Folder, contentDescription = null, tint = cx.faint, modifier = Modifier.size(11.dp))
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    path,
+                    color = cx.faint,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(cx.bg0)
-                .navigationBarsPadding()
-                .imePadding()
-                .padding(horizontal = 8.dp, vertical = 10.dp),
+                .clip(RoundedCornerShape(20.dp))
+                .background(cx.bg2)
+                .border(1.dp, cx.border, RoundedCornerShape(20.dp))
+                .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            // Left: upload a phone file, and pick a desktop file — both insert context.
-            ComposerIcon(Icons.Filled.UploadFile, uploading, stringResource(R.string.remote_upload)) {
-                uploadLauncher.launch("*/*")
-            }
-            ComposerIcon(Icons.Filled.Folder, false, stringResource(R.string.remote_pick_desktop_file)) {
-                showPicker = true
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(cx.bg3)
+                        .clickable { showAttach = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (uploading) {
+                        CircularProgressIndicator(strokeWidth = 2.dp, color = cx.accent, modifier = Modifier.size(16.dp))
+                    } else {
+                        Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.remote_attach), tint = cx.muted, modifier = Modifier.size(18.dp))
+                    }
+                }
+                DropdownMenu(expanded = showAttach, onDismissRequest = { showAttach = false }, containerColor = cx.bg2) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.remote_upload), color = cx.text, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Filled.UploadFile, contentDescription = null, tint = cx.muted, modifier = Modifier.size(17.dp)) },
+                        onClick = {
+                            showAttach = false
+                            uploadLauncher.launch("*/*")
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.remote_pick_desktop_file), color = cx.text, fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Filled.Folder, contentDescription = null, tint = cx.muted, modifier = Modifier.size(17.dp)) },
+                        onClick = {
+                            showAttach = false
+                            showPicker = true
+                        },
+                    )
+                }
             }
             Spacer(Modifier.size(4.dp))
             DarkInput(
                 value = text,
                 onValueChange = { text = it },
                 placeholder = stringResource(R.string.remote_message_hint),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).padding(vertical = 6.dp),
                 singleLine = false,
             )
-            Spacer(Modifier.size(8.dp))
+            Spacer(Modifier.size(6.dp))
             val bg = when {
                 isStreaming -> cx.danger
                 canSend -> cx.accent
@@ -984,7 +1767,7 @@ private fun Composer(
             }
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(bg)
                     .clickable(enabled = isStreaming || canSend) {
@@ -1001,7 +1784,7 @@ private fun Composer(
                     if (isStreaming) Icons.Filled.Stop else Icons.Filled.ArrowUpward,
                     contentDescription = if (isStreaming) stringResource(R.string.remote_stop) else stringResource(R.string.remote_send),
                     tint = if (isStreaming || canSend) Color.White else cx.faint,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
@@ -1031,21 +1814,6 @@ private fun Composer(
     }
 }
 
-@Composable
-private fun ComposerIcon(icon: ImageVector, busy: Boolean, desc: String, onClick: () -> Unit) {
-    val cx = LocalRemotePalette.current
-    Box(
-        modifier = Modifier.size(40.dp).clip(CircleShape).clickable(enabled = !busy, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (busy) {
-            CircularProgressIndicator(strokeWidth = 2.dp, color = cx.accent, modifier = Modifier.size(18.dp))
-        } else {
-            Icon(icon, contentDescription = desc, tint = cx.muted, modifier = Modifier.size(20.dp))
-        }
-    }
-}
-
 /** Append a file reference (`@path`) to the composer text so the agent reads it as context. */
 private fun appendRef(text: String, path: String): String {
     val prefix = if (text.isBlank()) "" else text.trimEnd() + " "
@@ -1066,125 +1834,8 @@ private fun queryDisplayName(context: Context, uri: Uri): String {
 }
 
 // ---------------------------------------------------------------------------
-// Conversation drawer + model picker
+// Model picker
 // ---------------------------------------------------------------------------
-
-@Composable
-private fun ConversationDrawer(
-    snapshot: RemoteSnapshot,
-    endpointLabel: String?,
-    currentTab: RemoteTab,
-    onSelectTab: (RemoteTab) -> Unit,
-    onSwitch: (String) -> Unit,
-    onNew: () -> Unit,
-    onDelete: (String) -> Unit,
-    onDisconnect: () -> Unit,
-) {
-    val cx = LocalRemotePalette.current
-    var pendingDelete by remember { mutableStateOf<RemoteConversation?>(null) }
-    ModalDrawerSheet(drawerContainerColor = cx.bg1, modifier = Modifier.fillMaxWidth(0.82f)) {
-        Column(modifier = Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 12.dp, vertical = 14.dp)) {
-            // Top: switch between the chat mirror, the file browser, and the terminal.
-            DrawerTab(Icons.Filled.ChatBubbleOutline, stringResource(R.string.remote_tab_chat), currentTab == RemoteTab.CHAT) { onSelectTab(RemoteTab.CHAT) }
-            DrawerTab(Icons.Filled.Folder, stringResource(R.string.remote_files), currentTab == RemoteTab.FILES) { onSelectTab(RemoteTab.FILES) }
-            DrawerTab(Icons.Filled.Terminal, stringResource(R.string.remote_terminal), currentTab == RemoteTab.TERMINAL) { onSelectTab(RemoteTab.TERMINAL) }
-            HorizontalDivider(color = cx.border, modifier = Modifier.padding(vertical = 8.dp))
-
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.remote_conversations), color = cx.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(cx.accentSoft)
-                        .border(1.dp, cx.accent, RoundedCornerShape(9.dp))
-                        .clickable(onClick = onNew)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = null, tint = cx.accent, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.size(4.dp))
-                    Text(stringResource(R.string.remote_new_chat), color = cx.accent, fontSize = 13.sp)
-                }
-            }
-            Spacer(Modifier.size(8.dp))
-
-            LazyColumn(modifier = Modifier.weight(1f)) {
-                items(snapshot.conversations, key = { it.id }) { conv ->
-                    val active = conv.id == snapshot.activeConversationId
-                    val running = conv.isRunning || conv.id == snapshot.runningConversationId
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (active) cx.bg3 else Color.Transparent)
-                            .clickable { onSwitch(conv.id) }
-                            .padding(start = 12.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (running) {
-                                    CircularProgressIndicator(strokeWidth = 1.5.dp, color = cx.accent, modifier = Modifier.size(13.dp))
-                                    Spacer(Modifier.size(6.dp))
-                                }
-                                Text(
-                                    conv.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.remote_new_chat),
-                                    color = if (active) cx.text else cx.muted,
-                                    fontSize = 14.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            if (conv.changedFiles.isNotEmpty()) {
-                                Text(
-                                    conv.changedFiles.joinToString(" · "),
-                                    color = cx.faint,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        IconButton(onClick = { pendingDelete = conv }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.cd_delete), tint = cx.faint, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(color = cx.border, modifier = Modifier.padding(vertical = 8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClick = onDisconnect)
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.LinkOff, contentDescription = null, tint = cx.danger, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(stringResource(R.string.remote_disconnect), color = cx.danger, fontSize = 14.sp)
-                    endpointLabel?.let {
-                        Text(it, color = cx.faint, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-        }
-    }
-
-    pendingDelete?.let { target ->
-        ConfirmDialog(
-            title = stringResource(R.string.delete_conv_title),
-            message = stringResource(R.string.delete_conv_msg),
-            confirmLabel = stringResource(R.string.action_delete),
-            onConfirm = { onDelete(target.id); pendingDelete = null },
-            onDismiss = { pendingDelete = null },
-        )
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1340,25 +1991,6 @@ private fun ConfirmDialog(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun DrawerTab(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    val cx = LocalRemotePalette.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) cx.accentSoft else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = if (selected) cx.accent else cx.muted, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.size(12.dp))
-        Text(label, color = if (selected) cx.accent else cx.text, fontSize = 14.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 

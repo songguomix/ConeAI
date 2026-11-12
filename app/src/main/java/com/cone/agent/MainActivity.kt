@@ -3,7 +3,6 @@ package com.cone.agent
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -19,12 +18,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.cone.agent.data.repository.SettingsRepository
-import com.cone.agent.service.WakeWordService
 import com.cone.agent.ui.SystemActions
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.cone.agent.ui.navigation.ConeNavHost
 import com.cone.agent.ui.theme.AppLocale
@@ -38,6 +34,18 @@ class MainActivity : FragmentActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var installedAppsProvider: com.cone.agent.vision.InstalledAppsProvider
+    @Inject lateinit var accessibilityBridge: com.cone.agent.vision.AccessibilityBridge
+
+    override fun onResume() {
+        super.onResume()
+        // 回到前台时静默自检一次：系统里开着却没连上，先尝试自己写回（ADB 授权设备立刻生效）。
+        // 写不进去也没关系——权限页的看门狗会把状态升级为“未响应”，并给出「重新开启」。
+        if (!accessibilityBridge.connected.value &&
+            com.cone.agent.vision.AccessibilityState.isEnabledInSettings(this)
+        ) {
+            com.cone.agent.vision.AccessibilityState.tryReenable(this)
+        }
+    }
 
     private val screenCaptureLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -78,15 +86,6 @@ class MainActivity : FragmentActivity() {
             openAssistantSettings = ::openAssistantSettings,
             requestAppListPermission = ::requestAppListPermission,
         )
-
-        // Resume the always-on wake-word listener if the user enabled it (and the mic is granted).
-        lifecycleScope.launch {
-            val micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
-            if (settingsRepository.wakeWordEnabled.first() && micGranted) {
-                WakeWordService.start(this@MainActivity)
-            }
-        }
 
         setContent {
             val language by settingsRepository.appLanguage.collectAsState(initial = "zh")

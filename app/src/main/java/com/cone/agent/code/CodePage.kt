@@ -5,8 +5,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,25 +23,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Difference
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.automirrored.outlined.HelpOutline
-import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.PlayCircleOutline
-import androidx.compose.material.icons.outlined.SdStorage
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -50,6 +51,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,15 +60,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -93,7 +97,7 @@ fun CodePage(
     Box(modifier = modifier.fillMaxSize()) {
         val project = current
         if (project == null) {
-            CodeHomeContent(viewModel, onPickFolder, onOpenWorkflowMemory)
+            CodeHomeContent(viewModel, onPickFolder)
         } else {
             CodeWorkspaceContent(
                 project = project,
@@ -111,330 +115,96 @@ fun CodePage(
 private fun CodeHomeContent(
     viewModel: CodeViewModel,
     onPickFolder: () -> Unit,
-    onOpenWorkflowMemory: () -> Unit,
 ) {
-    val ideas by viewModel.ideasState.collectAsStateWithLifecycle()
     val storage by viewModel.storageState.collectAsStateWithLifecycle()
-    val modelId by viewModel.modelId.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // Ask for ideas as soon as there is a model to ask; a model picked later re-triggers it.
-    LaunchedEffect(modelId) {
-        if (modelId != null) viewModel.loadIdeas()
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(20.dp, 12.dp, 20.dp, 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    // 和「智能体 / 问答」空态完全同一套版式：同一张应用图标、同样 34sp 标题、同样 24dp 边距，
+    // 且整块垂直居中，三个模式切来切去位置不会跳。
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.Center,
     ) {
-        item { HomeHeader() }
-
-        if (storage.fallback) {
-            item {
-                AccessBanner(
-                    target = viewModel.defaultRoot().absolutePath,
-                    onGrant = {
+        Image(
+            painter = painterResource(R.mipmap.ic_launcher),
+            contentDescription = null,
+            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(18.dp)),
+        )
+        Spacer(Modifier.height(18.dp))
+        Text(
+            stringResource(R.string.code_home_title),
+            style = MaterialTheme.typography.displaySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.code_home_desc),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(24.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 权重槽给 chip 占位：路径长时 chip 自己省略，右侧按钮仍贴右边、保持单行。
+            Box(modifier = Modifier.weight(1f)) {
+                FolderChip(
+                    path = storage.root.absolutePath,
+                    onClick = onPickFolder,
+                )
+            }
+            if (storage.fallback) {
+                Spacer(Modifier.width(8.dp))
+                TextButton(
+                    onClick = {
                         for (intent in viewModel.accessSettingsIntents()) {
                             if (runCatching { context.startActivity(intent); true }.getOrDefault(false)) break
                         }
                     },
-                )
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(32.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.code_storage_grant_short),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
             }
         }
-
-        item {
-            val habits by viewModel.workflowMemories.collectAsStateWithLifecycle()
-            val plan by viewModel.planMode.collectAsStateWithLifecycle()
-            // Scrollable: three chips do not fit a narrow phone, and truncating the folder path
-            // would hide the one thing on this row the user needs to be able to read.
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-            ) {
-                FolderChip(path = storage.root.absolutePath, onClick = onPickFolder)
-                HabitsChip(count = habits.size, onClick = onOpenWorkflowMemory)
-                PlanChip(on = plan, onToggle = { viewModel.setPlanMode(!plan) })
-            }
-        }
-
-        item { IdeasHeader(loading = ideas.loading) { viewModel.loadIdeas(force = true) } }
-
-        when {
-            ideas.loading -> item { IdeasLoading() }
-            modelId == null -> item { IdeasNotice(stringResource(R.string.code_ideas_no_model), null) }
-            ideas.error != null -> item {
-                IdeasNotice(ideas.error!!) { viewModel.loadIdeas(force = true) }
-            }
-            else -> items(ideas.items, key = { it.title }) { idea ->
-                IdeaCard(idea = idea) { viewModel.startIdea(idea) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeHeader() {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(17.dp))
-                .background(
-                    Brush.linearGradient(
-                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Filled.Code,
-                null,
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(30.dp),
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-        Text(
-            stringResource(R.string.code_home_title),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            stringResource(R.string.code_home_desc),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
 /** Shows where projects are written, and opens the picker to change it. */
 @Composable
-private fun FolderChip(path: String, onClick: () -> Unit) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.clip(CircleShape).clickable(onClick = onClick),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Outlined.Folder,
-                null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.width(8.dp))
+private fun FolderChip(path: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    AssistChip(
+        onClick = onClick,
+        modifier = modifier,
+        label = {
             Text(
-                path,
+                // 手机上一行放不下绝对路径，只显示最后两级，完整路径留给无障碍与目录选择器。
+                shortPath(path),
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-    }
-}
-
-/** 工作流记忆 at a glance: how many standing habits the agent is currently carrying. */
-@Composable
-private fun HabitsChip(count: Int, onClick: () -> Unit) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.clip(CircleShape).clickable(onClick = onClick),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Outlined.Lightbulb,
-                null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                stringResource(R.string.code_workflow_chip, count),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-/** 计划模式 toggle, on the page rather than buried in 设置 — it is decided per task, not once. */
-@Composable
-private fun PlanChip(on: Boolean, onToggle: () -> Unit) {
-    Surface(
-        shape = CircleShape,
-        color = if (on) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
         },
-        modifier = Modifier.clip(CircleShape).clickable(onClick = onToggle),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Outlined.Checklist,
-                null,
-                tint = if (on) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(17.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                stringResource(if (on) R.string.code_plan_mode_on else R.string.code_plan_mode_off),
-                style = MaterialTheme.typography.labelMedium,
-                color = if (on) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                maxLines = 1,
-            )
-        }
-    }
+        leadingIcon = {
+            Icon(Icons.Outlined.Folder, contentDescription = path, modifier = Modifier.size(16.dp))
+        },
+    )
 }
 
-@Composable
-private fun AccessBanner(target: String, onGrant: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Outlined.SdStorage,
-                null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.code_access_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    stringResource(R.string.code_access_desc, target),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f),
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            TextButton(onClick = onGrant) { Text(stringResource(R.string.code_access_grant)) }
-        }
-    }
-}
-
-@Composable
-private fun IdeasHeader(loading: Boolean, onRefresh: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            stringResource(R.string.code_ideas_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f),
-        )
-        TextButton(onClick = onRefresh, enabled = !loading) {
-            Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.code_ideas_refresh))
-        }
-    }
-}
-
-@Composable
-private fun IdeasLoading() {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-        Spacer(Modifier.width(12.dp))
-        Text(
-            stringResource(R.string.code_ideas_loading),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun IdeasNotice(message: String, onRetry: (() -> Unit)?) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        onRetry?.let { TextButton(onClick = it) { Text(stringResource(R.string.code_ideas_retry)) } }
-    }
-}
-
-/** One suggestion. The whole card starts it — reading it and deciding are the same gesture. */
-@Composable
-private fun IdeaCard(idea: ProjectIdea, onStart: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).clickable(onClick = onStart),
-    ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            TemplateBadge(idea.template.id, size = 44)
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    idea.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    idea.summary,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
-                Text(
-                    stringResource(R.string.code_start),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                )
-            }
-        }
+/** 路径太长时折成「…/最后两级」，手机上更好读。 */
+private fun shortPath(path: String): String {
+    val parts = path.trimEnd('/').split('/').filter { it.isNotEmpty() }
+    return when {
+        parts.isEmpty() -> path
+        parts.size <= 2 -> "/" + parts.joinToString("/")
+        else -> "…/" + parts.takeLast(2).joinToString("/")
     }
 }
 
@@ -460,6 +230,10 @@ private fun CodeWorkspaceContent(
         if (turns.isNotEmpty()) listState.animateScrollToItem(turns.lastIndex)
     }
 
+    // 手机版的「工作台」：对话 / 改动 是内嵌页，文件 / 预览 仍是全屏浮层。
+    var tab by rememberSaveable(project.id) { mutableStateOf(0) }
+    val changes = remember(turns) { collectChanges(turns) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         ProjectBar(
             project = project,
@@ -475,7 +249,24 @@ private fun CodeWorkspaceContent(
             onTogglePlanMode = { viewModel.setPlanMode(!it) },
             onDelete = { viewModel.deleteProject(project) },
         )
-        if (turns.isEmpty()) {
+        CodeWorkbenchTabs(
+            selected = tab,
+            changeCount = changes.size,
+            onSelect = { index ->
+                when (index) {
+                    0, 1 -> tab = index
+                    2 -> viewModel.showPane(CodePane.FILES)
+                    3 -> viewModel.showPane(CodePane.PREVIEW)
+                }
+            },
+        )
+        if (tab == 1) {
+            ChangesPane(
+                changes = changes,
+                onOpenFile = { viewModel.openFile(it) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (turns.isEmpty()) {
             WorkspaceEmptyState(modifier = Modifier.fillMaxSize(), onSuggestion = onFillInput)
         } else {
             LazyColumn(
@@ -497,6 +288,169 @@ private fun CodeWorkspaceContent(
                 if (running) item { WorkingIndicator() }
                 if (awaitingPlan) item { PlanApprovalBar(viewModel) }
                 if (awaitingAnswer) item { AwaitingAnswerHint() }
+            }
+        }
+    }
+}
+
+/**
+ * 工作台的四个入口，对应桌面端 ConeCode 的 tab 栏：对话、改动是页内切换，
+ * 文件与预览打开原有的全屏面板（手机上全屏比并排更实用）。
+ */
+@Composable
+private fun CodeWorkbenchTabs(selected: Int, changeCount: Int, onSelect: (Int) -> Unit) {
+    val labels = listOf(
+        stringResource(R.string.code_tab_chat),
+        if (changeCount > 0) {
+            stringResource(R.string.code_tab_changes_count, changeCount)
+        } else {
+            stringResource(R.string.code_tab_changes)
+        },
+        stringResource(R.string.code_files),
+        stringResource(R.string.code_preview),
+    )
+    val icons = listOf(
+        Icons.AutoMirrored.Outlined.Chat,
+        Icons.Outlined.Difference,
+        Icons.Outlined.Folder,
+        Icons.Outlined.PlayCircleOutline,
+    )
+    TabRow(
+        selectedTabIndex = selected,
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.primary,
+        divider = {},
+    ) {
+        labels.forEachIndexed { index, label ->
+            Tab(
+                selected = selected == index,
+                onClick = { onSelect(index) },
+                text = {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                icon = { Icon(icons[index], contentDescription = null, modifier = Modifier.size(17.dp)) },
+            )
+        }
+    }
+}
+
+/** 本次会话里被改动过的文件（每个文件只留最后一次写入），与桌面端的「改动」面板一致。 */
+private fun collectChanges(turns: List<CodeTurn>): List<ToolOutcome> {
+    val byTarget = LinkedHashMap<String, ToolOutcome>()
+    turns.forEach { turn ->
+        turn.results.forEach { outcome ->
+            val writes = outcome.tool == "write" || outcome.tool == "edit"
+            if ((writes || outcome.diff.isNotEmpty()) && outcome.target.isNotBlank()) {
+                byTarget[outcome.target] = outcome
+            }
+        }
+    }
+    return byTarget.values.toList().asReversed()
+}
+
+@Composable
+private fun ChangesPane(
+    changes: List<ToolOutcome>,
+    onOpenFile: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf<String?>(null) }
+    if (changes.isEmpty()) {
+        Column(
+            modifier = modifier.padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                Icons.Outlined.Difference,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(26.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                stringResource(R.string.code_changes_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
+    val added = changes.sumOf { it.added }
+    val removed = changes.sumOf { it.removed }
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            Text(
+                stringResource(R.string.code_changes_summary, changes.size, added, removed),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+            )
+        }
+        items(changes, key = { it.target }) { outcome ->
+            val open = expanded == outcome.target
+            Card(
+                onClick = { expanded = if (open) null else outcome.target },
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.AutoMirrored.Outlined.InsertDriveFile,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            outcome.target.substringAfterLast('/'),
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "+${outcome.added} −${outcome.removed}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(
+                            onClick = { onOpenFile(outcome.target) },
+                            modifier = Modifier.size(30.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.OpenInNew,
+                                contentDescription = stringResource(R.string.code_changes_open),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(15.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        outcome.target,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 24.dp),
+                    )
+                    if (open && outcome.diff.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        DiffBody(outcome.diff)
+                    }
+                }
             }
         }
     }

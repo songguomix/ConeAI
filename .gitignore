@@ -33,3 +33,8 @@ keystore.properties
 # Vosk model (65MB) — ./setup.sh downloads it, do not commit
 app/src/main/assets/vosk-model/*
 !app/src/main/assets/vosk-model/README.md
+
+# Local agent state & debugging artifacts (not source)
+.conecode/
+screenshot_*.png
+window_dump*.xml

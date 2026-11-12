@@ -57,6 +57,8 @@ data class EnvironmentStatus(
     val accessibilityReady: Boolean = false,
     /** 系统设置里无障碍是开着的，但服务还没重新绑定上（重启/恢复中，等一会儿即可）。 */
     val accessibilityRestarting: Boolean = false,
+    /** Enabled in settings but still not bound after a while — the service is wedged. */
+    val accessibilityStuck: Boolean = false,
     val overlayReady: Boolean = false,
     val captureReady: Boolean = false,
     val notificationsReady: Boolean = true,

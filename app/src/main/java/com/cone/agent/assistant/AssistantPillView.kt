@@ -156,7 +156,7 @@ class AssistantPillView(
         // Scrim: a tap outside the pill dismisses; a drag circles a region to ask about (see
         // [onTouchEvent]). Handled manually rather than with an OnClickListener because the two
         // gestures start identically and only diverge once the finger has moved.
-        setBackgroundColor(SCRIM)
+        setBackgroundColor(scrimColor())
 
         card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -548,11 +548,44 @@ class AssistantPillView(
 
     /** Show recognized text (partial or final) in place of the waveform. */
     fun showTranscript(text: String) {
+        val changed = transcript.text?.toString() != text
         input.visibility = View.GONE
         transcript.maxLines = 3
         transcript.text = text
         transcript.visibility = View.VISIBLE
         waveform.visibility = View.INVISIBLE
+        if (changed) {
+            transcript.alpha = 0f
+            transcript.animate().alpha(1f).setDuration(140L).start()
+        }
+    }
+
+    /**
+     * 反向的退场：背板淡出 + 底部卡片下滑，与 [animateIn] 对称。
+     * 电源键唤起后点空白/按返回时，界面是"收起来"而不是瞬间消失。
+     */
+    fun animateOut(onEnd: () -> Unit) {
+        if (isAnimatingOut) return
+        isAnimatingOut = true
+        // 底部卡片先下沉一点，整体再淡出：读起来像"收起来"，而不是被系统关掉。
+        bottomStack.animate()
+            .alpha(0f)
+            .translationY((bottomStack.height + dp(28)).toFloat())
+            .setDuration(180L)
+            .start()
+        animate()
+            .alpha(0f)
+            .setDuration(180L)
+            .withEndAction(onEnd)
+            .start()
+    }
+
+    private var isAnimatingOut = false
+
+    private fun scrimColor(): Int {
+        val base = runCatching { ConeColors.tokens(context).scrim }.getOrDefault(SCRIM)
+        // 55% 不透明度：既压住背后的界面，又能看出这是"浮在系统之上"。
+        return (base and 0x00FFFFFF) or 0x8C000000.toInt()
     }
 
     /** Show a short status / error message. */
@@ -1315,6 +1348,7 @@ class AssistantPillView(
 
     private companion object {
         // Semi-transparent scrim behind the pill (fixed; not part of the dynamic palette).
+        /** Fallback scrim when the theme tokens are unavailable. */
         const val SCRIM = 0x66000000
         const val SNIP_HINT_BG = 0xB3000000.toInt()
 

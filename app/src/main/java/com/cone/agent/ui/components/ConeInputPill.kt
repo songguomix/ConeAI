@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.cone.agent.R
+import com.cone.agent.ui.theme.ConeShapes
 
 /**
  * The floating input island every conversational screen types into.
@@ -52,14 +54,16 @@ fun ConeInputPill(
     leading: @Composable () -> Unit = {},
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
+    // Gemini 式的"搜索/输入岛"：纯白浮起、28dp 圆角、无明显描边，靠投影与页面区分。
     Surface(
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shadowElevation = 6.dp,
+        shape = ConeShapes.Field,
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 10.dp,
+        tonalElevation = 0.dp,
         modifier = modifier,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(4.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             leading()
@@ -78,7 +82,7 @@ fun ConeInputPill(
                     fieldValue = it
                     if (it.text != value) onValueChange(it.text)
                 },
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 6.dp),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurface,
                 ),
@@ -102,6 +106,7 @@ fun ConeInputPill(
             FilledIconButton(
                 onClick = { if (busy) onStop() else onSend() },
                 enabled = busy || sendEnabled,
+                modifier = Modifier.size(42.dp),
             ) {
                 if (busy) {
                     Icon(busyIcon, contentDescription = stringResource(R.string.cd_stop))

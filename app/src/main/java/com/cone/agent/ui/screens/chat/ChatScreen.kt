@@ -1,15 +1,15 @@
 package com.cone.agent.ui.screens.chat
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.provider.OpenableColumns
+import android.text.format.DateUtils
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -17,6 +17,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,13 +28,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -39,34 +44,28 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import com.cone.agent.ui.theme.ConeShapes
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
@@ -75,31 +74,36 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PhonelinkRing
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Watch
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -108,6 +112,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -123,23 +128,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import android.content.Context
-import android.provider.OpenableColumns
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -148,14 +147,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.cone.agent.R
 import com.cone.agent.assistant.SpeechController
-import com.cone.agent.core.Constants
 import com.cone.agent.assistant.VoskSpeechEngine
-import com.cone.agent.domain.model.ConversationMode
-import com.cone.agent.domain.model.ConversationSummary
-import com.cone.agent.domain.model.TaskStatus
-import com.cone.agent.domain.model.UiMessage
-import com.cone.agent.ui.SystemActions
-import androidx.activity.compose.BackHandler
 import com.cone.agent.code.CodeFolderPickerDialog
 import com.cone.agent.code.CodeHelpDialog
 import com.cone.agent.code.CodeHistorySheet
@@ -165,12 +157,21 @@ import com.cone.agent.code.CodePage
 import com.cone.agent.code.CodePane
 import com.cone.agent.code.CodeViewModel
 import com.cone.agent.code.CodeWorkflowMemorySheet
+import com.cone.agent.core.Constants
+import com.cone.agent.domain.model.ConversationMode
+import com.cone.agent.domain.model.ConversationSummary
+import com.cone.agent.domain.model.TaskStatus
+import com.cone.agent.domain.model.UiMessage
+import com.cone.agent.ui.SystemActions
 import com.cone.agent.ui.components.ConeInputPill
-import com.cone.agent.ui.components.ModelSwitcher
 import com.cone.agent.ui.components.MessageBubble
-import kotlinx.coroutines.launch
+import com.cone.agent.ui.components.ModelSwitcher
+import com.cone.agent.ui.components.humanAction
+import com.cone.agent.ui.theme.ConeShapes
 import java.io.File
 import java.util.Calendar
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -192,7 +193,6 @@ fun ChatScreen(
     val asking by viewModel.asking.collectAsStateWithLifecycle()
     val searching by viewModel.searching.collectAsStateWithLifecycle()
     val conversations by viewModel.conversations.collectAsStateWithLifecycle()
-    val language by viewModel.language.collectAsStateWithLifecycle()
     val webSearchEnabled by viewModel.webSearchEnabled.collectAsStateWithLifecycle()
     val cumulativeTokens by viewModel.cumulativeTokens.collectAsStateWithLifecycle()
     val incognitoAsk by viewModel.incognitoAsk.collectAsStateWithLifecycle()
@@ -404,8 +404,6 @@ fun ChatScreen(
             ConeDrawer(
                 modelLabel = label?.modelId,
                 conversations = conversations,
-                language = language,
-                onSelectLanguage = { viewModel.setLanguage(it) },
                 onDeleteConversation = { id -> viewModel.deleteConversation(id) },
                 // Close the drawer *then* act in the SAME coroutine, so the close animation finishes before
                 // we navigate / change state, leaving the drawer cleanly closed.
@@ -425,6 +423,7 @@ fun ChatScreen(
                     scope.launch { drawerState.close(); viewModel.openConversation(id, convMode) }
                 },
                 incognitoAsk = incognitoAsk,
+                showIncognito = mode == ChatMode.ASK,
                 onToggleIncognito = { viewModel.setIncognitoAsk(it) },
             )
         },
@@ -446,7 +445,18 @@ fun ChatScreen(
         containerColor = Color.Transparent,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
+          Column {
             TopAppBar(
+                // 模式岛放回顶栏右侧；顶栏透明，页面底色与呼吸光晕保持连续。
+                actions = {
+                    ModeIsland(mode = mode, onChange = viewModel::setMode)
+                    Spacer(Modifier.size(6.dp))
+                },
+                // 透明顶栏：让页面底色与呼吸光晕连续，而不是被一条 surface 色块切断。
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
                 navigationIcon = {
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_menu))
@@ -463,12 +473,8 @@ fun ChatScreen(
                         onOpenSettings = onOpenSettings,
                     )
                 },
-                // Top-right: switch between 智能体 (agent) and 问答 (Q&A).
-                actions = {
-                    ModeIsland(mode = mode, onChange = viewModel::setMode)
-                    Spacer(Modifier.size(8.dp))
-                },
             )
+          }
         },
         bottomBar = {
             InputBar(
@@ -528,6 +534,14 @@ fun ChatScreen(
                         // Question's on its way — retract the keyboard and clear input focus.
                         keyboardController?.hide()
                         focusManager.clearFocus()
+                        // Agent tasks run in the background behind a floating monitor window, so the
+                        // app itself steps out of the way instead of staying on screen.
+                        if (isAgentMode) {
+                            scope.launch {
+                                kotlinx.coroutines.delay(350)
+                                (context as? android.app.Activity)?.moveTaskToBack(true)
+                            }
+                        }
                     }
                 },
                 onVoice = toggleVoice,
@@ -590,6 +604,7 @@ fun ChatScreen(
                 cumulativeTokens = cumulativeTokens,
                 incognitoAsk = incognitoAsk,
                 streamingText = if (page == 1) streamingText else null,
+                onFillInput = { input = it },
             )
         }
     }
@@ -681,6 +696,8 @@ private fun ChatModePage(
     cumulativeTokens: Int,
     incognitoAsk: Boolean,
     streamingText: String?,
+    /** Tap on a starter suggestion: fills the page's shared input (never sends). */
+    onFillInput: (String) -> Unit,
 ) {
     val listState = rememberLazyListState()
     androidx.compose.runtime.LaunchedEffect(messages.size) {
@@ -743,8 +760,11 @@ private fun ChatModePage(
             val showGreeting = messages.isEmpty() && (!isAgentMode || !state.isBusy)
             val thinking = !isAgentMode && asking
             if (showGreeting) {
-                // In an incognito 问答 the greeting is replaced by an "无痕模式" banner.
-                GreetingView(incognito = !isAgentMode && incognitoAsk)
+                // 空态只留问候语与一句说明，不再堆三条建议卡。
+                GreetingView(
+                    isAgent = isAgentMode,
+                    incognito = !isAgentMode && incognitoAsk,
+                )
             } else {
                 LazyColumn(
                     state = listState,
@@ -765,6 +785,7 @@ private fun ChatModePage(
             }
         }
         // Cumulative token readout, pinned just under the conversation (above the input bar).
+        // ChatModePage 里的 !isAgentMode 就是问答页，无痕标记只属于它。
         ContextUsageBar(tokens = cumulativeTokens, incognito = !isAgentMode && incognitoAsk)
     }
 }
@@ -792,7 +813,7 @@ private fun ContextUsageBar(tokens: Int, incognito: Boolean) {
     ) {
         if (incognito) {
             Icon(
-                painter = painterResource(R.drawable.ic_incognito),
+                Icons.Outlined.VisibilityOff,
                 contentDescription = stringResource(R.string.cd_incognito),
                 modifier = Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -872,10 +893,19 @@ private fun BoxScope.BreathingGlow() {
     )
 }
 
-/** Centered time-of-day greeting (Gemini-style: rounded app icon above a large gradient greeting).
- *  In an incognito 问答 it shows an "无痕模式" banner instead of the time-of-day line. */
+/** Centered empty state for a fresh thread: time-of-day greeting, one line saying what this mode is
+ *  good for, and tappable starter suggestions.
+ *
+ *  Deliberately the same visual language as the code page's empty state: theme-colored icon tile,
+ *  large title, muted subtitle, pill suggestions. Everything is drawn from [MaterialTheme] so the
+ *  first screen follows light/dark like the rest of the app instead of hardcoding a peach tile.
+ *  A suggestion only fills the shared input field (never auto-sends), so the user still decides.
+ *  In an incognito 问答 it shows the "无痕模式" line and no starters. */
 @Composable
-private fun GreetingView(incognito: Boolean = false) {
+private fun GreetingView(
+    isAgent: Boolean,
+    incognito: Boolean = false,
+) {
     val greetingRes = remember(incognito) {
         if (incognito) {
             R.string.greeting_incognito
@@ -890,50 +920,51 @@ private fun GreetingView(incognito: Boolean = false) {
         }
     }
     val greeting = stringResource(greetingRes)
+    val subtitleRes = when {
+        incognito -> R.string.chat_subtitle_incognito
+        isAgent -> R.string.chat_subtitle_agent
+        else -> R.string.chat_subtitle_ask
+    }
+
+    // Gemini 的左对齐大标题 + Muse 的纸质留白：标题不用渐变，靠字号与留白建立层级。
     Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        // ConeAI icon, rounded into an app-icon tile.
-        Box(
-            modifier = Modifier
-                .size(92.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFFFFF1DD), Color(0xFFFFE0B0)))),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier.size(128.dp),
-            )
-        }
-        Spacer(Modifier.height(24.dp))
+        Image(
+            painter = painterResource(R.mipmap.ic_launcher),
+            contentDescription = null,
+            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(18.dp)),
+        )
+        Spacer(Modifier.height(18.dp))
         Text(
             text = greeting,
-            style = TextStyle(
-                brush = Brush.linearGradient(
-                    listOf(MaterialTheme.colorScheme.primary, Color(0xFF8AB4F8)),
-                ),
-                fontWeight = FontWeight.Bold,
-                fontSize = 36.sp,
-            ),
+            style = MaterialTheme.typography.displaySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(subtitleRes),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
 /**
- * The navigation drawer (sidebar). Top: 发起新对话. Below it the items that used to live in the
- * top-bar overflow menu (模型与设置 / Provider 管理 / 权限与环境 / 清空记录). The remaining space at
- * the bottom is the scrollable history-conversation area.
+ * The navigation drawer (sidebar).
+ *
+ * Layout, top to bottom: identity row (app mark, model label, incognito), one primary action
+ * (发起新对话), the history list, then a compact strip of the five destinations that used to be
+ * full-width menu rows — those ate almost the whole drawer and left room for only two conversations.
  */
 @Composable
 private fun ConeDrawer(
     modelLabel: String?,
     conversations: List<ConversationSummary>,
-    language: String,
-    onSelectLanguage: (String) -> Unit,
     onDeleteConversation: (Long) -> Unit,
     onNewConversation: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -944,134 +975,95 @@ private fun ConeDrawer(
     onClearAllHistory: () -> Unit,
     onOpenConversation: (Long, ConversationMode) -> Unit,
     incognitoAsk: Boolean = false,
+    showIncognito: Boolean = false,
     onToggleIncognito: (Boolean) -> Unit = {},
 ) {
     var pendingDelete by remember { mutableStateOf<ConversationSummary?>(null) }
     var showClearAll by remember { mutableStateOf(false) }
-    ModalDrawerSheet {
+
+    ModalDrawerSheet(
+        drawerContainerColor = MaterialTheme.colorScheme.surface,
+        drawerShape = RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp),
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Brand header: rounded ConeAI icon + name + current model id + incognito toggle.
+            DrawerHeader(
+                modelLabel = modelLabel,
+                incognitoAsk = incognitoAsk,
+                showIncognito = showIncognito,
+                onToggleIncognito = onToggleIncognito,
+            )
+
+            FilledTonalButton(
+                onClick = onNewConversation,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .height(44.dp),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text(stringResource(R.string.drawer_new_conversation), style = MaterialTheme.typography.labelLarge)
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 20.dp, top = 24.dp, end = 12.dp, bottom = 12.dp),
+                    .padding(start = 20.dp, end = 10.dp, top = 16.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Brush.linearGradient(listOf(Color(0xFFFFF1DD), Color(0xFFFFE0B0)))),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_launcher_foreground),
-                        contentDescription = null,
-                        modifier = Modifier.size(56.dp),
-                    )
-                }
-                Spacer(Modifier.size(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.drawer_history),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (conversations.isNotEmpty()) {
+                    Spacer(Modifier.size(6.dp))
                     Text(
-                        "ConeAI",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
+                        conversations.size.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
                     )
-                    modelLabel?.let {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(
+                        onClick = { showClearAll = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp),
+                    ) {
                         Text(
-                            it,
+                            stringResource(R.string.drawer_clear_short),
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }
-                IconButton(
-                    onClick = { onToggleIncognito(!incognitoAsk) },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_incognito),
-                        contentDescription = stringResource(R.string.cd_incognito_toggle),
-                        tint = if (incognitoAsk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
 
-            NavigationDrawerItem(
-                label = { Text(stringResource(R.string.drawer_new_conversation)) },
-                icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                selected = false,
-                onClick = onNewConversation,
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
-
-            NavigationDrawerItem(
-                label = { Text(stringResource(R.string.drawer_settings)) },
-                icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                selected = false,
-                onClick = onOpenSettings,
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-            )
-            NavigationDrawerItem(
-                label = { Text(stringResource(R.string.drawer_providers)) },
-                icon = { Icon(Icons.Outlined.Dns, contentDescription = null) },
-                selected = false,
-                onClick = onOpenProviders,
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-            )
-            NavigationDrawerItem(
-                label = { Text(stringResource(R.string.drawer_permissions)) },
-                icon = { Icon(Icons.Outlined.Security, contentDescription = null) },
-                selected = false,
-                onClick = onOpenPermissions,
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-            )
-            NavigationDrawerItem(
-                label = { Text(stringResource(R.string.drawer_remote)) },
-                icon = { Icon(Icons.Outlined.PhonelinkRing, contentDescription = null) },
-                selected = false,
-                onClick = onOpenRemote,
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-            )
-            NavigationDrawerItem(
-                label = { Text(stringResource(R.string.drawer_watch)) },
-                icon = { Icon(Icons.Outlined.Watch, contentDescription = null) },
-                selected = false,
-                onClick = onOpenWatch,
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-            )
-            NavigationDrawerItem(
-                label = { Text(stringResource(R.string.drawer_clear_all)) },
-                icon = { Icon(Icons.Filled.DeleteSweep, contentDescription = null) },
-                selected = false,
-                onClick = { showClearAll = true },
-                modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp))
-
-            Text(
-                stringResource(R.string.drawer_history),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 28.dp, top = 4.dp, bottom = 4.dp),
-            )
-
-            // History fills the remaining space, pinning the language switcher to the very bottom.
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 if (conversations.isEmpty()) {
-                    Text(
-                        stringResource(R.string.drawer_no_history),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 28.dp, top = 8.dp),
-                    )
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Outlined.History,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            stringResource(R.string.drawer_no_history),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
                         items(conversations, key = { it.id }) { item ->
                             DrawerHistoryRow(
                                 item = item,
@@ -1083,8 +1075,13 @@ private fun ConeDrawer(
                 }
             }
 
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            LanguageSwitcher(language = language, onSelect = onSelectLanguage)
+            DrawerFooterNav(
+                onOpenSettings = onOpenSettings,
+                onOpenProviders = onOpenProviders,
+                onOpenPermissions = onOpenPermissions,
+                onOpenRemote = onOpenRemote,
+                onOpenWatch = onOpenWatch,
+            )
         }
     }
 
@@ -1115,9 +1112,7 @@ private fun ConeDrawer(
             confirmButton = {
                 TextButton(
                     onClick = { showClearAll = false; onClearAllHistory() },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
                     Text(stringResource(R.string.action_clear_all))
                 }
@@ -1131,132 +1126,165 @@ private fun ConeDrawer(
     }
 }
 
-/** A history row: tap to reopen, with a mode badge and a delete button. */
+/** Compact identity row: app mark, name, current model, incognito toggle (ASK mode only). */
 @Composable
-private fun DrawerHistoryRow(
-    item: ConversationSummary,
-    onOpen: () -> Unit,
-    onDelete: () -> Unit,
+private fun DrawerHeader(
+    modelLabel: String?,
+    incognitoAsk: Boolean,
+    showIncognito: Boolean,
+    onToggleIncognito: (Boolean) -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpen() }
-            .padding(start = 28.dp, end = 6.dp, top = 2.dp, bottom = 2.dp),
+            .padding(start = 20.dp, top = 18.dp, end = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            Icons.Filled.History,
+        Image(
+            painter = painterResource(R.mipmap.ic_launcher),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)),
         )
         Spacer(Modifier.size(12.dp))
-        Text(
-            item.title,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Spacer(Modifier.size(8.dp))
-        ModeBadge(item.mode)
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Filled.Delete,
-                contentDescription = stringResource(R.string.cd_delete),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "ConeAI",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
             )
+            modelLabel?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-    }
-}
-
-/**
- * All selectable UI languages: tag → native display name. To add a language, append it here and
- * create the matching `values-<tag>/strings.xml`.
- */
-private val AppLanguages = listOf(
-    "zh" to "中文",
-    "en" to "English",
-    "ja" to "日本語",
-)
-
-/**
- * Top-bar inline model switcher: tap the model name to pick another model right from the chat — no
- * trip to Settings — and it works even while an answer is streaming (applies to the next turn).
- */
-/** Language picker pinned at the bottom of the drawer: a globe row that opens a dropdown of languages. */
-@Composable
-private fun LanguageSwitcher(language: String, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val currentName = AppLanguages.firstOrNull { it.first == language }?.second ?: "中文"
-    Box {
-        Row(
-            // Align the globe with the other drawer icons (menu items + history rows all sit at 28.dp).
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = true }
-                .padding(start = 28.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Filled.Language,
-                contentDescription = stringResource(R.string.language_label),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.size(12.dp))
-            Text(currentName, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Icon(
-                Icons.Filled.ArrowDropDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.clip(ConeShapes.Menu),
-        ) {
-            AppLanguages.forEach { (tag, name) ->
-                DropdownMenuItem(
-                    text = { Text(name) },
-                    trailingIcon = if (tag == language) {
-                        { Icon(Icons.Filled.Check, contentDescription = null) }
+        // 无痕只影响问答模式（智能体会话总要落盘），其它模式不出现这个入口。
+        if (showIncognito) {
+            IconButton(
+                onClick = { onToggleIncognito(!incognitoAsk) },
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.VisibilityOff,
+                    contentDescription = stringResource(R.string.cd_incognito_toggle),
+                    modifier = Modifier.size(19.dp),
+                    tint = if (incognitoAsk) {
+                        MaterialTheme.colorScheme.primary
                     } else {
-                        null
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
-                    onClick = { expanded = false; onSelect(tag) },
                 )
             }
         }
     }
 }
 
-/** Small chip marking a history row as a 智能体 (agent) or 问答 (Q&A) conversation. */
+/** Five destinations as icon cells, sized so the history list keeps the drawer's height. */
 @Composable
-private fun ModeBadge(mode: ConversationMode) {
-    val isAgent = mode == ConversationMode.AGENT
-    val container = if (isAgent) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.secondaryContainer
+private fun DrawerFooterNav(
+    onOpenSettings: () -> Unit,
+    onOpenProviders: () -> Unit,
+    onOpenPermissions: () -> Unit,
+    onOpenRemote: () -> Unit,
+    onOpenWatch: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
+        DrawerNavCell(Icons.Outlined.Settings, R.string.drawer_short_settings, onOpenSettings)
+        DrawerNavCell(Icons.Outlined.Dns, R.string.drawer_short_providers, onOpenProviders)
+        DrawerNavCell(Icons.Outlined.Security, R.string.drawer_short_permissions, onOpenPermissions)
+        DrawerNavCell(Icons.Outlined.PhonelinkRing, R.string.drawer_short_remote, onOpenRemote)
+        DrawerNavCell(Icons.Outlined.Watch, R.string.drawer_short_watch, onOpenWatch)
     }
-    val content = if (isAgent) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSecondaryContainer
-    }
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(container)
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+}
+
+@Composable
+private fun RowScope.DrawerNavCell(icon: ImageVector, labelRes: Int, onClick: () -> Unit) {
+    // 官方 Surface 负责水波纹、点击语义与形状裁剪，不必再手写 clickable + clip。
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.weight(1f),
+        shape = MaterialTheme.shapes.medium,
+        color = Color.Transparent,
     ) {
-        Text(
-            text = if (isAgent) stringResource(R.string.mode_agent) else stringResource(R.string.mode_ask),
-            style = MaterialTheme.typography.labelSmall,
-            color = content,
-        )
+        Column(
+            modifier = Modifier.padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(19.dp),
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                stringResource(labelRes),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
+}
+
+/** 一条历史会话：官方 ListItem 承载（前导模式图标、标题、相对时间、尾部删除）。 */
+@Composable
+private fun DrawerHistoryRow(
+    item: ConversationSummary,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val isAgent = item.mode == ConversationMode.AGENT
+    ListItem(
+        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable { onOpen() },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        leadingContent = {
+            Icon(
+                if (isAgent) Icons.Outlined.AutoAwesome else Icons.Outlined.ChatBubbleOutline,
+                contentDescription = stringResource(if (isAgent) R.string.mode_agent else R.string.mode_ask),
+                tint = if (isAgent) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outline
+                },
+                modifier = Modifier.size(18.dp),
+            )
+        },
+        headlineContent = {
+            Text(
+                item.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        },
+        supportingContent = {
+            Text(
+                DateUtils.getRelativeTimeSpanString(
+                    item.updatedAt,
+                    System.currentTimeMillis(),
+                    DateUtils.MINUTE_IN_MILLIS,
+                ).toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        },
+        trailingContent = {
+            IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                Icon(
+                    Icons.Outlined.DeleteOutline,
+                    contentDescription = stringResource(R.string.cd_delete),
+                    tint = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        },
+    )
 }
 
 @Composable
@@ -1267,86 +1295,182 @@ private fun AgentStatusCard(
     onStop: () -> Unit,
 ) {
     var showPlan by remember { mutableStateOf(false) }
+    // 人类观看用的计时：任务一开始就记，暂停时停表（Mika 那种"正在做事"的实时感）。
+    var startedAt by remember(state.instruction) { mutableStateOf(0L) }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(state.status) {
+        if (state.status == TaskStatus.RUNNING && startedAt == 0L) {
+            startedAt = System.currentTimeMillis()
+        }
+    }
+    LaunchedEffect(state.isBusy) {
+        while (state.isBusy) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val elapsedSec = if (startedAt == 0L) 0 else ((now - startedAt) / 1000).toInt()
+    val finished = state.status == TaskStatus.SUCCEEDED ||
+        state.status == TaskStatus.FAILED ||
+        state.status == TaskStatus.CANCELLED
+    val pulse = rememberInfiniteTransition(label = "agent-live")
+    val dotAlpha by pulse.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
+        label = "agent-dot",
+    )
+
     Card(
-        modifier = Modifier.fillMaxWidth().padding(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // 状态行：脉动圆点 + 人话状态 + 用时
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                state.status == TaskStatus.FAILED -> MaterialTheme.colorScheme.error
+                                finished -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> MaterialTheme.colorScheme.primary.copy(alpha = dotAlpha)
+                            },
+                        ),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    statusLabel(state.status),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                if (startedAt != 0L) {
+                    Text(
+                        "⏱ " + formatElapsed(elapsedSec),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = state.instruction.ifBlank { stringResource(R.string.task_default) },
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                text = if (state.maxSteps >= Constants.UNLIMITED_MAX_STEPS) {
-                    stringResource(
-                        R.string.agent_step_format_unlimited,
-                        statusLabel(state.status),
-                        state.displayStep,
-                    )
-                } else {
-                    stringResource(
-                        R.string.agent_step_format,
-                        statusLabel(state.status),
-                        state.displayStep,
-                        state.maxSteps,
-                    )
-                },
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            LinearProgressIndicator(
-                progress = { (state.stepIndex.toFloat() / state.maxSteps.coerceAtLeast(1)).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            )
-            Text(
-                text = stringResource(R.string.agent_current_action, state.currentAction.ifBlank { "-" }),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
+            // 当前动作：人类能看懂的一行（去掉工具名噪音）
+            if (!finished && state.currentAction.isNotBlank()) {
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Bolt,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            humanAction(state.currentAction),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (state.maxSteps >= Constants.UNLIMITED_MAX_STEPS) {
+                        stringResource(R.string.agent_step_short, state.displayStep)
+                    } else {
+                        stringResource(R.string.agent_step_of, state.displayStep, state.maxSteps)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (!finished) {
+                LinearProgressIndicator(
+                    progress = { (state.stepIndex.toFloat() / state.maxSteps.coerceAtLeast(1)).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                )
+            }
+            if (state.summary.isNotBlank() && finished) {
+                Text(
+                    state.summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
             if (showPlan && state.plan.isNotEmpty()) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
                 ) {
                     Text(
-                        text = state.plan.mapIndexed { i, s -> "${i + 1}. $s" }.joinToString("\n"),
+                        text = state.plan.mapIndexed { i, step -> "${i + 1}. $step" }.joinToString("\n"),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(12.dp),
                     )
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (state.plan.isNotEmpty()) {
-                    OutlinedButton(onClick = { showPlan = !showPlan }) {
-                        Text(stringResource(if (showPlan) R.string.agent_hide_plan else R.string.fc_plan))
-                    }
-                }
-                if (state.isBusy) {
-                    if (state.isPaused) {
-                        Button(onClick = onResume) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = null)
-                            Text(stringResource(R.string.fc_resume))
+            if (!finished) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (state.plan.isNotEmpty()) {
+                        TextButton(onClick = { showPlan = !showPlan }) {
+                            Text(stringResource(R.string.agent_view_plan), style = MaterialTheme.typography.labelLarge)
                         }
-                    } else {
-                        OutlinedButton(onClick = onPause) { Text(stringResource(R.string.fc_pause)) }
                     }
-                    Button(onClick = onStop) {
-                        Icon(Icons.Filled.Stop, contentDescription = null)
-                        Text(stringResource(R.string.fc_stop))
+                    TextButton(onClick = if (state.isPaused) onResume else onPause) {
+                        Text(
+                            stringResource(if (state.isPaused) R.string.fc_resume else R.string.fc_pause),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    FilledTonalButton(
+                        onClick = onStop,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Text(stringResource(R.string.fc_stop), style = MaterialTheme.typography.labelLarge)
                     }
                 }
             }
         }
     }
 }
+
+/** 秒数 → 1m23s / 47s，手机上比纯秒数好读。 */
+private fun formatElapsed(seconds: Int): String =
+    if (seconds < 60) "${seconds}s" else "${seconds / 60}m${seconds % 60}s"
+
+
 
 /** 计划模式的确认卡片：列出总体计划，等用户点「开始执行」或「取消任务」。 */
 @Composable
@@ -1659,7 +1783,7 @@ private fun InputBar(
     }
 }
 
-/** A compact pill segmented control switching between the agent and plain Q&A modes. */
+
 /**
  * The top-right island: 智能体 / 问答 / 代码 — three pages of one pager, not three destinations.
  *
@@ -1753,6 +1877,7 @@ private fun IslandSegment(
 }
 
 private const val ISLAND_MS = 240
+
 
 @Composable
 private fun ModelHintCard(onOpenSettings: () -> Unit) {

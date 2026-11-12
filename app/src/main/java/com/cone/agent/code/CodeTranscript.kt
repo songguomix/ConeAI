@@ -452,7 +452,7 @@ private fun ToolCard(call: ToolCall, outcome: ToolOutcome?, onOpenFile: (String)
 }
 
 @Composable
-private fun DiffBody(lines: List<DiffLine>) {
+internal fun DiffBody(lines: List<DiffLine>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
