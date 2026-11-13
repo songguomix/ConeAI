@@ -38,10 +38,6 @@ class RemoteSession @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private val httpsClient: OkHttpClient by lazy {
-        remoteTls.configure(okHttpClient.newBuilder()).build()
-    }
-
     private val _state = MutableStateFlow(RemoteUiState())
     val state: StateFlow<RemoteUiState> = _state.asStateFlow()
 
@@ -85,6 +81,7 @@ class RemoteSession @Inject constructor(
         }
         val endpoint = parsed.copy(password = password?.takeIf { it.isNotBlank() } ?: parsed.password)
         streamJob?.cancel()
+        val httpsClient = remoteTls.configure(okHttpClient.newBuilder(), endpoint.fingerprint).build()
         val newClient = RemoteClient(httpsClient, endpoint)
         client = newClient
         userDisconnected = false

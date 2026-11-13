@@ -1,31 +1,81 @@
 package com.cone.agent.ui.screens.settings
 
+import com.cone.agent.BuildConfig
+import com.cone.agent.update.AppUpdateRepository
+import com.cone.agent.update.UpdateCheckResult
+import kotlinx.coroutines.CancellationException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cone.agent.core.Constants
 import com.cone.agent.data.local.entity.VisionModelView
-import com.cone.agent.data.repository.MemoryItem
-import com.cone.agent.data.repository.MemoryRepository
+import com.cone.agent.memory.records.MemoryRecord
+import com.cone.agent.memory.records.MemoryService
 import com.cone.agent.data.repository.ProviderRepository
 import com.cone.agent.data.repository.ScreenMode
 import com.cone.agent.data.repository.SelectedAgentModel
 import com.cone.agent.data.repository.SettingsRepository
+import com.cone.agent.memory.DreamRunner
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+data class AppUpdateUiState(
+    val checking: Boolean = false,
+    val result: UpdateCheckResult? = null,
+    val failed: Boolean = false,
+    val showPrompt: Boolean = false,
+)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val providerRepository: ProviderRepository,
     private val settingsRepository: SettingsRepository,
-    private val memoryRepository: MemoryRepository,
+    private val appUpdateRepository: AppUpdateRepository,
+    private val memoryService: MemoryService,
+    private val dream: DreamRunner,
 ) : ViewModel() {
+
+    private val _appUpdate = MutableStateFlow(AppUpdateUiState())
+    val appUpdate: StateFlow<AppUpdateUiState> = _appUpdate.asStateFlow()
+
+    init {
+        checkForUpdates()
+    }
+
+    fun checkForUpdates() {
+        if (_appUpdate.value.checking) return
+        _appUpdate.value = _appUpdate.value.copy(checking = true, failed = false, showPrompt = false)
+        viewModelScope.launch {
+            try {
+                val result = appUpdateRepository.check(BuildConfig.VERSION_NAME)
+                _appUpdate.value = AppUpdateUiState(
+                    result = result,
+                    showPrompt = result is UpdateCheckResult.Available,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _appUpdate.value = _appUpdate.value.copy(checking = false, failed = true)
+            }
+        }
+    }
+
+    fun showUpdatePrompt() {
+        if (_appUpdate.value.result is UpdateCheckResult.Available) {
+            _appUpdate.value = _appUpdate.value.copy(showPrompt = true)
+        }
+    }
+
+    fun dismissUpdatePrompt() {
+        _appUpdate.value = _appUpdate.value.copy(showPrompt = false)
+    }
 
     val allModels: StateFlow<List<VisionModelView>> = providerRepository.allModels
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -45,11 +95,17 @@ class SettingsViewModel @Inject constructor(
     val planModeEnabled: StateFlow<Boolean> = settingsRepository.planModeEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    val memoryEnabled: StateFlow<Boolean> = memoryRepository.enabled
+    val memoryEnabled: StateFlow<Boolean> = memoryService.enabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
-    val memories: StateFlow<List<MemoryItem>> = memoryRepository.memories
+    val memories: StateFlow<List<MemoryRecord>> = memoryService.records
+        // Tombstones stay on disk (undo/audit) but never clutter the profile list.
+        .map { records -> records.filter { it.isActive } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Dream consolidation is opt-in: it spends one extra model call per finished run. */
+    val dreamAuto: StateFlow<Boolean> = dream.autoEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val screenMode: StateFlow<ScreenMode> = settingsRepository.screenMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ScreenMode.LOCAL_OCR)
@@ -74,8 +130,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setSearchEngine(value) }
     }
 
-    fun updateMemory(id: Long, content: String) {
-        viewModelScope.launch { memoryRepository.update(id, content) }
+    fun updateMemory(id: String, content: String) {
+        viewModelScope.launch { memoryService.updateContent(id, content) }
     }
 
     /** UI language, edited here since the drawer no longer hosts a language picker. */
@@ -191,15 +247,19 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { settingsRepository.setPlanModeEnabled(value) }
     }
 
-    fun setMemoryEnabled(value: Boolean) {
-        viewModelScope.launch { memoryRepository.setEnabled(value) }
+    fun setDreamAuto(value: Boolean) {
+        viewModelScope.launch { dream.setAutoEnabled(value) }
     }
 
-    fun deleteMemory(id: Long) {
-        viewModelScope.launch { memoryRepository.remove(id) }
+    fun setMemoryEnabled(value: Boolean) {
+        viewModelScope.launch { memoryService.setEnabled(value) }
+    }
+
+    fun deleteMemory(id: String) {
+        viewModelScope.launch { memoryService.delete(id) }
     }
 
     fun clearMemories() {
-        viewModelScope.launch { memoryRepository.clear() }
+        viewModelScope.launch { memoryService.clear() }
     }
 }

@@ -9,6 +9,13 @@ import com.cone.agent.data.local.entity.VisionModelView
 import com.cone.agent.data.repository.ProviderRepository
 import com.cone.agent.data.repository.SelectedAgentModel
 import com.cone.agent.data.repository.SettingsRepository
+import com.cone.agent.memory.DreamRunner
+import com.cone.agent.memory.DreamSession
+import com.cone.agent.memory.DreamWiki
+import com.cone.agent.memory.MemoryScope
+import com.cone.agent.memory.WikiIndexEntry
+import com.cone.agent.memory.records.MemoryRecord
+import com.cone.agent.memory.records.MemoryService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -17,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -50,6 +58,8 @@ class CodeViewModel @Inject constructor(
     private val storage: CodeStorage,
     private val codeMemory: CodeMemoryRepository,
     private val settingsRepository: SettingsRepository,
+    private val dream: DreamRunner,
+    private val memoryService: MemoryService,
     providerRepository: ProviderRepository,
 ) : ViewModel() {
 
@@ -111,12 +121,17 @@ class CodeViewModel @Inject constructor(
     private val _ideas = MutableStateFlow(IdeasState())
     val ideasState: StateFlow<IdeasState> = _ideas.asStateFlow()
 
-    /** 工作流记忆：the user's standing habits, applied to every project. */
-    val workflowMemories: StateFlow<List<WorkflowMemory>> = codeMemory.memories
+    /** 全局记忆：Memory 2.0 records that follow the user across projects. */
+    val memoryRecords: StateFlow<List<MemoryRecord>> = memoryService.records
+        .map { records -> records.filter { it.isActive && it.layer == "global" } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val workflowEnabled: StateFlow<Boolean> = codeMemory.enabled
+    val memoryEnabled: StateFlow<Boolean> = memoryService.enabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    /** 本项目记忆：dream notes distilled from this project's finished sessions. */
+    private val _dreamNotes = MutableStateFlow<List<WikiIndexEntry>>(emptyList())
+    val dreamNotes: StateFlow<List<WikiIndexEntry>> = _dreamNotes.asStateFlow()
 
     /** 计划模式：the agent plans first and waits for approval before touching any file. */
     val planMode: StateFlow<Boolean> = settingsRepository.codePlanMode
@@ -144,6 +159,13 @@ class CodeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch { workspace.refresh() }
+        // One-time: the old flat workflow habits become Memory 2.0 records, so the code agent and
+        // the Q&A share one memory instead of two half-remembering stores.
+        viewModelScope.launch {
+            runCatching {
+                memoryService.importLegacyHabits(codeMemory.memories.first().map { it.content })
+            }
+        }
     }
 
     /* ---------------- storage ---------------- */
@@ -205,16 +227,33 @@ class CodeViewModel @Inject constructor(
 
     /* ---------------- the two memories ---------------- */
 
-    fun setWorkflowEnabled(value: Boolean) {
-        viewModelScope.launch { codeMemory.setEnabled(value) }
+    fun setMemoryEnabled(value: Boolean) {
+        viewModelScope.launch { memoryService.setEnabled(value) }
     }
 
-    fun deleteWorkflowMemory(id: Long) {
-        viewModelScope.launch { codeMemory.remove(id) }
+    fun deleteMemory(id: String) {
+        viewModelScope.launch { memoryService.delete(id) }
     }
 
-    fun clearWorkflowMemories() {
-        viewModelScope.launch { codeMemory.clear() }
+    fun clearMemory() {
+        viewModelScope.launch { memoryService.clear() }
+    }
+
+    /** Reloaded when the memory sheet opens: notes change only after a dream pass. */
+    fun refreshDreamNotes() {
+        val project = _current.value ?: return
+        viewModelScope.launch {
+            runCatching { dream.notes(MemoryScope.of(project.id)) }
+                .onSuccess { notes -> _dreamNotes.value = notes.sortedByDescending { it.updated } }
+        }
+    }
+
+    fun clearDreamNotes() {
+        val project = _current.value ?: return
+        viewModelScope.launch {
+            dream.clear(MemoryScope.of(project.id))
+            _dreamNotes.value = emptyList()
+        }
     }
 
     /**
@@ -309,6 +348,8 @@ class CodeViewModel @Inject constructor(
             "undo" -> undo()
             "compact" -> compact()
             "init" -> initInstructions()
+            "dream" -> dreamNow()
+            "memory" -> memoryCommand(rest)
         }
     }
 
@@ -351,6 +392,96 @@ class CodeViewModel @Inject constructor(
             )
             _running.value = false
         }
+    }
+
+    /**
+     * /dream — consolidates the transcript into project notes and reports what it wrote.
+     *
+     * The same pass runs automatically after a finished task when auto-dream is on; the command
+     * exists so the user can trigger it on demand without waiting for a run to end.
+     */
+    private fun dreamNow() {
+        val project = _current.value ?: return
+        if (_running.value) return
+        val session = dreamSession(project, _turns.value)
+        if (session == null) {
+            _notice.value = LocaleHelper.string(context, R.string.code_dream_empty)
+            return
+        }
+        _running.value = true
+        job = viewModelScope.launch {
+            runCatching { dream.run(MemoryScope.of(project.id), listOf(session)) }.fold(
+                onSuccess = { report ->
+                    note(
+                        LocaleHelper.string(
+                            context,
+                            R.string.code_dream_done,
+                            report.filesWritten,
+                            report.indexEntries,
+                        ),
+                    )
+                },
+                onFailure = { note(LocaleHelper.string(context, R.string.code_dream_failed, it.message.orEmpty())) },
+            )
+            _running.value = false
+        }
+    }
+
+    /**
+     * /memory — what this project has learned, and how to forget it.
+     *
+     * `/memory` lists the dream notes of the current project; `/memory clear` drops them. The
+     * durable global facts (shared with 问答) are managed in Settings, not here.
+     */
+    private fun memoryCommand(arg: String) {
+        val project = _current.value ?: return
+        if (_running.value) return
+        viewModelScope.launch {
+            val scope = MemoryScope.of(project.id)
+            if (arg.trim().equals("clear", ignoreCase = true)) {
+                dream.clear(scope)
+                note(LocaleHelper.string(context, R.string.code_memory_cleared))
+                return@launch
+            }
+            val notes = dream.notes(scope).sortedByDescending { it.updated }.take(12)
+            if (notes.isEmpty()) {
+                note(LocaleHelper.string(context, R.string.code_memory_empty))
+                return@launch
+            }
+            val body = notes.joinToString("\n") { "- ${it.slug}：${it.description.ifBlank { it.name }}" }
+            note(LocaleHelper.string(context, R.string.code_memory_list, notes.size) + "\n" + body)
+        }
+    }
+
+    /** Dreams the finished run in the background when the user opted into auto-dream. */
+    private fun maybeDream(project: CodeProject) {
+        val session = dreamSession(project, _turns.value) ?: return
+        viewModelScope.launch { runCatching { dream.maybeRun(MemoryScope.of(project.id), session) } }
+    }
+
+    /**
+     * Flattens the transcript into the one session the dream analyzer reads. The id carries a hash
+     * of the content, so an unchanged transcript is skipped and a changed one is a new session.
+     */
+    private fun dreamSession(project: CodeProject, turns: List<CodeTurn>): DreamSession? {
+        if (turns.size < 2) return null
+        val text = turns.joinToString("\n\n") { turn ->
+            val who = when (turn.role) {
+                CodeRole.USER -> "User"
+                CodeRole.ASSISTANT -> "Assistant"
+                CodeRole.ERROR -> "Error"
+                CodeRole.NOTE -> "System"
+            }
+            "$who: " + turn.text.take(4000)
+        }.takeLast(24000)
+        if (text.length < 200) return null
+        val hash = DreamWiki.hashText(project.id + text)
+        return DreamSession(
+            id = "code-${project.id}-$hash",
+            title = project.name,
+            updatedAt = System.currentTimeMillis(),
+            transcript = text,
+        )
     }
 
     /** Rolls the files back to the snapshot taken before the last request. */
@@ -610,6 +741,7 @@ class CodeViewModel @Inject constructor(
                     is CodeEvent.Finished -> {
                         updateLastAssistant { it.copy(streaming = false, tokens = event.tokens) }
                         finish()
+                        maybeDream(project)
                     }
 
                     // Stopped on purpose, waiting on the user: a question to answer, or a plan to
@@ -693,10 +825,14 @@ class CodeViewModel @Inject constructor(
     }
 
     private companion object {
-        val WRITING_TOOLS = setOf("write", "edit", "delete", "rename")
+        val WRITING_TOOLS = setOf(
+            "create_file", "edit_file", "create_dir", "delete", "rename", "copy", "download",
+            // legacy tag names, still present in saved transcripts
+            "write", "edit",
+        )
 
         /** Commands that only mean anything inside an open project. */
-        val PROJECT_COMMANDS = setOf("clear", "undo", "compact", "init")
+        val PROJECT_COMMANDS = setOf("clear", "undo", "compact", "init", "dream", "memory")
 
         /** Phrasings people open a request with, stripped so the folder name is the subject itself. */
         val LEAD_INS = listOf(

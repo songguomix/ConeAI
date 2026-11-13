@@ -30,17 +30,12 @@ data class WorkflowMemory(
 )
 
 /**
- * 工作流记忆：how *this user* likes code written, remembered across every project.
+ * 旧版工作流记忆：how *this user* likes code written, remembered across every project.
  *
- * The companion to the per-project CONE.md, and the split between them is the whole point. A project
- * file is the right home for 「这个项目用 Vue 3 + Pinia」 — it belongs to the code and travels with it.
- * It is the wrong home for 「我不喜欢框架」 or 「注释写中文」, which are true of the user in every
- * project they will ever start, and which they should not have to write into each new folder.
- *
- * Kept in its own DataStore, separate from 问答记忆: mixing them would put a dietary restriction in
- * front of the coding agent and an indentation preference in front of the Q&A one, and each store
- * would spend the other's prompt budget. What they do share is the machinery that matters —
- * [MemoryMatcher] for recognising a restatement and [MemoryPolicy] for refusing secrets.
+ * **Legacy / migration source only.** Memory 2.0 ([com.cone.agent.memory.records.MemoryService])
+ * now owns this: the code agent reads and writes global records, and the old habits are imported
+ * once (origin = migration) so nothing is lost. This store is never written again, and its
+ * DataStore file is left untouched so a downgrade keeps the data.
  */
 @Singleton
 class CodeMemoryRepository @Inject constructor(
@@ -133,6 +128,15 @@ class CodeMemoryRepository @Inject constructor(
             append("\n\n【工作习惯】用户在所有项目里一贯的偏好，除非本次任务或项目约定另有要求，都照此执行：\n")
             items.takeLast(MAX_IN_PROMPT).forEach { appendLine("- ${it.content}") }
         }.trimEnd()
+    }
+
+    /** Substring match over remembered habits, newest first — backs the `memory_search` tool. */
+    suspend fun search(query: String, limit: Int): List<String> {
+        if (!enabledNow()) return emptyList()
+        val needle = query.trim().lowercase()
+        val items = currentItems()
+        val hits = if (needle.isEmpty()) items else items.filter { it.content.lowercase().contains(needle) }
+        return hits.takeLast(limit).reversed().map { it.content }
     }
 
     private suspend fun enabledNow(): Boolean = enabled.first()

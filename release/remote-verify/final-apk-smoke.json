@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "checks": [
+    "Android HTTPS pairing with per-install certificate fingerprint",
+    "Latest APK opens the installed UU entry without reusing an unbound device",
+    "Test pairing login cleared through the app UI"
+  ]
+}

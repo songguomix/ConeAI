@@ -8,6 +8,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -37,7 +38,7 @@ internal fun redactSecret(text: String): String = text
     .replace(Regex("""\b[0-9a-fA-F]{32,}\b"""), "<redacted>")
 
 /** A parsed pairing target: the desktop's base URL, per-session token, and optional password. */
-data class RemoteEndpoint(val base: String, val token: String, val password: String? = null) {
+data class RemoteEndpoint(val base: String, val token: String, val password: String? = null, val fingerprint: String? = null) {
     fun eventsUrl() = "$base/events?t=$token"
     fun cmdUrl() = "$base/cmd?t=$token"
 
@@ -77,8 +78,11 @@ data class RemoteEndpoint(val base: String, val token: String, val password: Str
             if (url.scheme == "http" && !isPrivateHost(url.host)) return null
             // The QR may also carry the password (`&p=`) so scanning auto-connects.
             val password = url.queryParameter("p")?.takeIf { it.isNotBlank() }
-            val portPart = if (url.port == HttpUrl.defaultPort(url.scheme)) "" else ":${url.port}"
-            return RemoteEndpoint("${url.scheme}://${url.host}$portPart", token, password)
+            val fingerprint = url.queryParameter("fp")?.lowercase()
+            if (fingerprint != null && (url.scheme != "https" || !fingerprint.matches(Regex("[0-9a-f]{64}")))) return null
+            val base = url.newBuilder().username("").password("").encodedPath("/").query(null).fragment(null)
+                .build().toString().removeSuffix("/")
+            return RemoteEndpoint(base, token, password, fingerprint)
         }
     }
 }
@@ -117,6 +121,10 @@ class RemoteClient(
     baseClient: OkHttpClient,
     val endpoint: RemoteEndpoint,
 ) {
+    // Never trust a self-reported snapshot ID to select a saved UU device. A verified LAN pin
+    // survives address changes; unpinned origins/credentials intentionally require their own binding.
+    val computerIdentity: String = remoteBindingIdentity(endpoint)
+
     // SSE is a long-lived stream kept alive by 25s server pings; disable the read timeout so a quiet
     // (idle) session is not torn down. Reuses the shared connection pool / dispatcher.
     private val streamClient: OkHttpClient = baseClient.newBuilder()
@@ -264,6 +272,7 @@ class RemoteClient(
         type: String,
         fields: Map<String, String>,
         timeoutMs: Long = 20_000L,
+        jsonFields: Map<String, JsonElement> = emptyMap(),
         onSendFailed: (() -> Unit)? = null,
     ): JsonObject? {
         val reqId = UUID.randomUUID().toString()
@@ -273,6 +282,7 @@ class RemoteClient(
             put("type", JsonPrimitive(type))
             put("reqId", JsonPrimitive(reqId))
             fields.forEach { (k, v) -> put(k, JsonPrimitive(v)) }
+            jsonFields.forEach { (k, v) -> if (k != "type" && k != "reqId") put(k, v) }
         }
         return try {
             // A failed HTTP send will never produce a reply — fail fast instead of burning
@@ -298,4 +308,11 @@ class RemoteClient(
             .build()
         runCatching { commandClient.newCall(request).execute().use { it.isSuccessful } }.getOrDefault(false)
     }
+}
+
+internal fun remoteBindingIdentity(endpoint: RemoteEndpoint): String {
+    val source = endpoint.fingerprint?.let { "verified-certificate:${it.lowercase()}" }
+        ?: "origin:${endpoint.base.length}:${endpoint.base}|credential:${endpoint.token.length}:${endpoint.token}"
+    return java.security.MessageDigest.getInstance("SHA-256").digest(source.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 }

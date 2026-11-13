@@ -1,0 +1,78 @@
+{
+  "passed": true,
+  "checks": [
+    "Android HTTPS pairing with per-install certificate fingerprint",
+    "Composer plus, input and send share the same vertical center",
+    "Pending question option answer",
+    "Work mode selection",
+    "Plan and review toggles",
+    "Native composer sends text",
+    "Pending question free-form answer",
+    "phone layout retains mode and controls",
+    "pad layout retains mode and controls",
+    "fold-inner layout retains mode and controls",
+    "fold-outer layout retains mode and controls",
+    "pad-landscape layout retains mode and controls",
+    "Android font scale 1.3 preserves controls",
+    "Desktop dark theme sync",
+    "Independent Chat component without Work tabs or modes",
+    "Independent RSI console, direction and runs",
+    "RSI direction save",
+    "RSI start and stop actions",
+    "Independent Work component and Standard Goal modes only",
+    "File browser opens a desktop file",
+    "File editor saves desktop content",
+    "Native terminal command and output",
+    "UU missing-client guidance",
+    "UU screen entry adapts to tablet and narrow foldable windows",
+    "Official UU Remote 4.47.0 installation detection",
+    "Real official UU client opens through authorize Deeplink",
+    "Unsolicited external callback cannot create a device binding",
+    "No Android fatal exception during verification"
+  ],
+  "phases": [
+    {
+      "scope": "Multi-window UI, composer, Chat/Work/RSI, HTTPS and questions",
+      "checks": [
+        "Android HTTPS pairing with per-install certificate fingerprint",
+        "Composer plus, input and send share the same vertical center",
+        "Pending question option answer",
+        "Work mode selection",
+        "Plan and review toggles",
+        "Native composer sends text",
+        "Pending question free-form answer",
+        "phone layout retains mode and controls",
+        "pad layout retains mode and controls",
+        "fold-inner layout retains mode and controls",
+        "fold-outer layout retains mode and controls",
+        "pad-landscape layout retains mode and controls",
+        "Android font scale 1.3 preserves controls",
+        "Desktop dark theme sync",
+        "Independent Chat component without Work tabs or modes",
+        "Independent RSI console, direction and runs",
+        "RSI direction save",
+        "RSI start and stop actions",
+        "Independent Work component and Standard Goal modes only",
+        "File browser opens a desktop file"
+      ],
+      "note": "Earlier phase stopped at editor accessibility role; remaining cases retested after its fix."
+    },
+    {
+      "passed": true,
+      "checks": [
+        "Android HTTPS pairing with per-install certificate fingerprint",
+        "File browser opens a desktop file",
+        "File editor saves desktop content",
+        "Native terminal command and output",
+        "UU missing-client guidance",
+        "UU screen entry adapts to tablet and narrow foldable windows",
+        "Official UU Remote 4.47.0 installation detection",
+        "Real official UU client opens through authorize Deeplink",
+        "Unsolicited external callback cannot create a device binding",
+        "No Android fatal exception during verification"
+      ],
+      "scope": "Native file save/terminal and official UU client installation/launch; no account or live device binding."
+    }
+  ],
+  "limitation": "Fold inner/outer window sizes were emulated; DEFAULT posture only. Real UU video/PiP requires account login and device binding and was not claimed as tested."
+}

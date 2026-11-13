@@ -1,0 +1,26 @@
+{
+  "checks": [
+    "Android HTTPS pairing with per-install certificate fingerprint",
+    "Composer plus, input and send share the same vertical center",
+    "Pending question option answer",
+    "Work mode selection",
+    "Plan and review toggles",
+    "Native composer sends text",
+    "Pending question free-form answer",
+    "phone layout retains mode and controls",
+    "pad layout retains mode and controls",
+    "fold-inner layout retains mode and controls",
+    "fold-outer layout retains mode and controls",
+    "pad-landscape layout retains mode and controls",
+    "Android font scale 1.3 preserves controls",
+    "Desktop dark theme sync",
+    "Independent Chat component without Work tabs or modes",
+    "Independent RSI console, direction and runs",
+    "RSI direction save",
+    "RSI start and stop actions",
+    "Independent Work component and Standard Goal modes only",
+    "File browser opens a desktop file"
+  ],
+  "passed": false,
+  "error": "no input field"
+}

@@ -1,0 +1,55 @@
+{
+  "before": {
+    "checks": {
+      "single_phone_conversation_menu": false,
+      "fold_screen_icon_not_squeezed": false,
+      "all_four_work_tabs_visible_on_fold": false,
+      "approval_cards_collapsed_in_conversation": false,
+      "bulk_reject_text_is_single_line": true,
+      "model_sheet_uses_chinese": false,
+      "composer_centers_within_3px": true,
+      "compact_directory_label": false,
+      "message_text_not_vertically_clipped": false,
+      "pad_sidebar_under_30_percent": false
+    },
+    "metrics": {
+      "phone_menu_count": 2,
+      "fold_screen_icon_width_px": 12,
+      "composer_centers_px": [
+        2247.5,
+        2248.0,
+        2247.5
+      ],
+      "conversation_viewport_height_px": 819,
+      "question_visible_height_px": 14,
+      "pad_sidebar_width_dp": 264.0
+    }
+  },
+  "after": {
+    "checks": {
+      "single_phone_conversation_menu": true,
+      "fold_screen_icon_not_squeezed": true,
+      "all_four_work_tabs_visible_on_fold": true,
+      "approval_cards_collapsed_in_conversation": true,
+      "bulk_reject_text_is_single_line": true,
+      "model_sheet_uses_chinese": true,
+      "composer_centers_within_3px": true,
+      "compact_directory_label": true,
+      "message_text_not_vertically_clipped": true,
+      "pad_sidebar_under_30_percent": true
+    },
+    "metrics": {
+      "phone_menu_count": 1,
+      "fold_screen_icon_width_px": 47,
+      "composer_centers_px": [
+        2247.5,
+        2248.0,
+        2247.5
+      ],
+      "conversation_viewport_height_px": 1412,
+      "question_visible_height_px": 43,
+      "pad_sidebar_width_dp": 220.0
+    }
+  },
+  "passed": true
+}

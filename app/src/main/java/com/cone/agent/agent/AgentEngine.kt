@@ -15,6 +15,7 @@ import com.cone.agent.data.repository.ResolvedProvider
 import com.cone.agent.data.repository.ScreenMode
 import com.cone.agent.data.repository.SelectedAgentModel
 import com.cone.agent.data.repository.SettingsRepository
+import com.cone.agent.memory.records.MemoryService
 import com.cone.agent.mcp.McpManager
 import com.cone.agent.vision.AccessibilityBridge
 import com.cone.agent.vision.ImageUtils
@@ -42,7 +43,7 @@ class AgentEngine @Inject constructor(
     private val ocrEngine: OcrEngine,
     private val bridge: AccessibilityBridge,
     private val promptBuilder: PromptBuilder,
-    private val memoryContext: MemoryContext,
+    private val memoryService: MemoryService,
     private val llmClient: LlmClient,
     private val providerRepository: ProviderRepository,
     private val settingsRepository: SettingsRepository,
@@ -193,7 +194,7 @@ class AgentEngine @Inject constructor(
         // answering a question: 「订个外卖」 needs the address and the allergy, 「给女儿发条消息」 needs
         // the daughter's name. Selected against the task instruction, and kept short — this prompt
         // is already carrying a screen dump.
-        val memories = memoryContext.relevant(instruction, MemoryContext.AGENT_LIMIT)
+        val memoryBlock = memoryService.retrieveBlock(instruction, projectId = null, limit = 6)
 
         val messages = promptBuilder.buildMessages(
             instruction = instruction,
@@ -201,7 +202,7 @@ class AgentEngine @Inject constructor(
             stepIndex = stepIndex,
             maxSteps = maxSteps,
             history = history,
-            memorySection = if (memories.isEmpty()) "" else memoryContext.format(memories),
+            memorySection = memoryBlock,
             mcpSection = mcpManager.promptSection(),
             // In dual mode the thinking model reasons from the text description, not the raw image.
             imageDataUrl = imageForModel,

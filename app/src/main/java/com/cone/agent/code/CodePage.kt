@@ -275,7 +275,7 @@ private fun CodeWorkspaceContent(
                 contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                itemsIndexed(turns) { _, turn ->
+                itemsIndexed(turns) { index, turn ->
                     TurnView(
                         turn = turn,
                         onOpenFile = { viewModel.openFile(it) },
@@ -283,6 +283,7 @@ private fun CodeWorkspaceContent(
                         onRestore = { turn.checkpoint?.let { viewModel.restoreCheckpoint(it) } },
                         canPreview = previewable,
                         onPreview = { viewModel.showPane(CodePane.PREVIEW) },
+                        isLast = index == turns.lastIndex && !running,
                     )
                 }
                 if (running) item { WorkingIndicator() }

@@ -135,7 +135,7 @@ $mcpSection""".trim()
         screenDescription: String? = null,
         overallPlan: List<String> = emptyList(),
         lastThought: String = "",
-        /** Pre-formatted 用户信息 block from MemoryContext; blank when there's nothing to say. */
+        /** Pre-formatted 用户信息 block from MemoryService; blank when there's nothing to say. */
         memorySection: String = "",
         mcpSection: String = "",
     ): List<ChatMessageDto> {

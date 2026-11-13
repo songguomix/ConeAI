@@ -34,8 +34,8 @@ android {
         applicationId = "com.cone.agent"
         minSdk = 26
         targetSdk = 35
-        versionCode = 102
-        versionName = "1.02"
+        versionCode = 103
+        versionName = "1.03"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -104,6 +104,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.window:window:1.4.0")
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
@@ -161,6 +162,9 @@ dependencies {
 
     // Read JPEG EXIF orientation so uploaded photos aren't shown rotated.
     implementation(libs.androidx.exifinterface)
+
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")

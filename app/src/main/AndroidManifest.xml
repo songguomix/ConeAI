@@ -22,7 +22,12 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Many Chinese ROMs (MIUI / ColorOS / OriginOS / HarmonyOS …) gate the installed-app list
          behind this runtime permission ("获取应用列表"). Undefined on stock Android, where the
-         <queries> declarations below already cover us, so declaring it is harmless there. -->
+         <queries>
+        <package android:name="com.netease.uuremote" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="uuremote" />
+        </intent> declarations below already cover us, so declaring it is harmless there. -->
     <uses-permission android:name="com.android.permission.GET_INSTALLED_APPS" />
     <!-- The agent's alarm/timer interface (AlarmClock.ACTION_SET_ALARM with SKIP_UI); a normal,
          auto-granted permission. -->
@@ -217,6 +222,20 @@
             android:stateNotNeeded="true"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
+        <activity
+            android:name=".remote.UuRemoteCallbackActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="coneai-uu" android:host="bind" />
+                <data android:scheme="coneai-uu" android:host="control" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

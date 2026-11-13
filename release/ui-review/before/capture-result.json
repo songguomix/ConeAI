@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "images": [
+    "15-rsi-direction-bottom.png",
+    "17-uu-entry.png",
+    "16-rsi-runs.png",
+    "19-work-fold-inner.png",
+    "21-work-dark.png",
+    "12-chat.png",
+    "14-rsi-direction.png",
+    "09-file-viewer.png",
+    "03-mode-menu.png",
+    "18-work-pad.png",
+    "11-terminal.png",
+    "01-work-question.png",
+    "13-rsi-console.png",
+    "06-changes.png",
+    "08-files.png",
+    "02-work-phone.png",
+    "20-work-fold-outer.png",
+    "04-model-picker.png",
+    "00-connection.png",
+    "22-work-font130.png",
+    "10-file-editor.png",
+    "05-conversation-drawer.png",
+    "07-change-preview.png"
+  ],
+  "scope": "ConeAI remote app regions, deterministic state over production HTTPS/SSE",
+  "hardwareHinge": false
+}

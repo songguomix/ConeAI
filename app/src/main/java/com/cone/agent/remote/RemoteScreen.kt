@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -60,6 +61,8 @@ import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Difference
@@ -76,22 +79,20 @@ import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -104,9 +105,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -126,9 +131,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -157,15 +164,15 @@ data class RemotePalette(
 private val DarkPalette = RemotePalette(
     bg0 = Color(0xFF1A1915), bg1 = Color(0xFF14130F), bg2 = Color(0xFF242320), bg3 = Color(0xFF2E2D28),
     bg4 = Color(0xFF3A3833),
-    border = Color(0xFF353330), text = Color(0xFFF0EDE8), muted = Color(0xFFA5A09A), faint = Color(0xFF706B65),
+    border = Color(0xFF353330), text = Color(0xFFF0EDE8), muted = Color(0xFFA5A09A), faint = Color(0xFFA09A92),
     accent = Color(0xFFDA7756), accentSoft = Color(0x26DA7756), danger = Color(0xFFE05A4A), amber = Color(0xFFD4993E),
-    success = Color(0xFF57B37A),
+    success = Color(0xFF4AAA6F),
 )
 
 private val LightPalette = RemotePalette(
     bg0 = Color(0xFFFAF6F1), bg1 = Color(0xFFF0EBE3), bg2 = Color(0xFFFFFFFF), bg3 = Color(0xFFEDE8E0),
     bg4 = Color(0xFFDDD7CE),
-    border = Color(0xFFE8E2DA), text = Color(0xFF1A1612), muted = Color(0xFF6B6560), faint = Color(0xFF9B9590),
+    border = Color(0xFFE8E2DA), text = Color(0xFF1A1612), muted = Color(0xFF6B6560), faint = Color(0xFF716B65),
     accent = Color(0xFFC96442), accentSoft = Color(0x1AC96442), danger = Color(0xFFC43E2E), amber = Color(0xFFB8762B),
     success = Color(0xFF2D8A56),
 )
@@ -173,7 +180,7 @@ private val LightPalette = RemotePalette(
 internal val LocalRemotePalette = staticCompositionLocalOf { DarkPalette }
 
 /** Which mirror surface is showing: the chat, the file browser, or the terminal. */
-internal enum class RemoteTab { CHAT, CHANGES, FILES, TERMINAL }
+internal enum class RemoteTab { CHAT, CHANGES, FILES, TERMINAL, SCREEN }
 
 /**
  * ConeAI sidebar entry that turns the phone into a remote control for a ConeCode desktop session.
@@ -200,7 +207,7 @@ fun RemoteScreen(
     val palette = if (state.snapshot?.theme != null) {
         if (desktopDark) DarkPalette else LightPalette
     } else if (isSystemInDarkTheme()) DarkPalette else LightPalette
-    CompositionLocalProvider(LocalRemotePalette provides palette) {
+    ConeCodeRemoteTheme(palette) {
         Surface(modifier = Modifier.fillMaxSize(), color = palette.bg0) {
             if (state.showMirror) {
                 MirrorScreen(state = state, viewModel = viewModel)
@@ -285,7 +292,7 @@ private fun ConnectScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = cx.text)
             }
-            Text(stringResource(R.string.remote_title), color = cx.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.remote_title), color = cx.text, style = RemoteType.heading, fontWeight = FontWeight.SemiBold)
         }
         HorizontalDivider(color = cx.border)
 
@@ -304,12 +311,12 @@ private fun ConnectScreen(
                 Icon(Icons.Filled.Smartphone, contentDescription = null, tint = cx.accent, modifier = Modifier.size(30.dp))
             }
             Spacer(Modifier.size(16.dp))
-            Text(stringResource(R.string.remote_connect_title), color = cx.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.remote_connect_title), color = cx.text, style = RemoteType.display, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(8.dp))
             Text(
                 stringResource(R.string.remote_connect_desc),
                 color = cx.muted,
-                fontSize = 13.sp,
+                style = RemoteType.body,
                 lineHeight = 20.sp,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -327,7 +334,7 @@ private fun ConnectScreen(
                 Text(
                     stringResource(R.string.remote_forget),
                     color = cx.faint,
-                    fontSize = 12.sp,
+                    style = RemoteType.bodySmall,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClearSaved).padding(horizontal = 10.dp, vertical = 6.dp),
                 )
                 Spacer(Modifier.size(22.dp))
@@ -383,21 +390,21 @@ private fun ConnectScreen(
                 connecting -> Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(strokeWidth = 2.dp, color = cx.accent, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(10.dp))
-                    Text(stringResource(R.string.remote_connecting), color = cx.muted, fontSize = 13.sp)
+                    Text(stringResource(R.string.remote_connecting), color = cx.muted, style = RemoteType.body)
                     Spacer(Modifier.size(14.dp))
                     Text(
                         stringResource(R.string.action_cancel),
                         color = cx.accent,
-                        fontSize = 13.sp,
+                        style = RemoteType.body,
                         modifier = Modifier.clickable(onClick = onCancel),
                     )
                 }
 
                 state.phase == RemotePhase.ERROR -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.remote_connect_failed), color = cx.danger, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.remote_connect_failed), color = cx.danger, style = RemoteType.body, fontWeight = FontWeight.Medium)
                     state.errorMessage?.let {
                         Spacer(Modifier.size(4.dp))
-                        Text(it, color = cx.faint, fontSize = 12.sp)
+                        Text(it, color = cx.faint, style = RemoteType.bodySmall)
                     }
                 }
             }
@@ -420,7 +427,7 @@ private fun OrDivider(label: String) {
     val cx = LocalRemotePalette.current
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         HorizontalDivider(color = cx.border, modifier = Modifier.weight(1f))
-        Text(label, color = cx.faint, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp))
+        Text(label, color = cx.faint, style = RemoteType.bodySmall, modifier = Modifier.padding(horizontal = 12.dp))
         HorizontalDivider(color = cx.border, modifier = Modifier.weight(1f))
     }
 }
@@ -440,8 +447,8 @@ private fun RememberedRow(label: String, enabled: Boolean, onClick: () -> Unit) 
         Icon(Icons.Filled.Refresh, contentDescription = null, tint = cx.muted, modifier = Modifier.size(16.dp))
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.remote_last_connected), color = cx.faint, fontSize = 11.sp)
-            Text(label, color = cx.text, fontSize = 13.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(stringResource(R.string.remote_last_connected), color = cx.faint, style = RemoteType.caption)
+            Text(label, color = cx.text, style = RemoteType.monoBody, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -462,11 +469,11 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
                 modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("ConeCode", color = cx.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text("ConeCode", color = cx.text, style = RemoteType.brand, modifier = Modifier.weight(1f))
                 Text(
                     stringResource(R.string.remote_disconnect),
                     color = cx.danger,
-                    fontSize = 13.sp,
+                    style = RemoteType.body,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { viewModel.disconnect() }.padding(horizontal = 10.dp, vertical = 6.dp),
                 )
             }
@@ -475,7 +482,7 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(strokeWidth = 2.dp, color = cx.accent, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.size(12.dp))
-                    Text(stringResource(R.string.remote_connecting), color = cx.muted, fontSize = 13.sp)
+                    Text(stringResource(R.string.remote_connecting), color = cx.muted, style = RemoteType.body)
                 }
             }
         }
@@ -484,28 +491,21 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
     val layout = rememberRemoteLayout()
     val twoPane = rememberRemoteTwoPane()
     var showModelPicker by remember { mutableStateOf(false) }
-    var tab by remember { mutableStateOf(RemoteTab.CHAT) }
+    var tab by rememberSaveable { mutableStateOf(RemoteTab.CHAT) }
     val onPickModel: () -> Unit = { showModelPicker = true }
 
-    when (layout) {
-        RemoteLayout.PAD -> PadMirror(
-            state = state,
-            snapshot = snap,
-            viewModel = viewModel,
-            tab = tab,
-            onTab = { tab = it },
-            twoPane = twoPane,
-            onPickModel = onPickModel,
-        )
-        RemoteLayout.PHONE -> PhoneMirror(
-            state = state,
-            snapshot = snap,
-            viewModel = viewModel,
-            tab = tab,
-            onTab = { tab = it },
-            onPickModel = onPickModel,
-        )
-    }
+    // 三种设备形态共用同一个 ConeCode 工作台外壳：同样的侧栏、标题栏、标签条和内容区。
+    // 布局参数只决定侧栏是常驻还是收成图标栏，不再切换到另一套手机界面。
+    ConeCodeShell(
+        state = state,
+        snapshot = snap,
+        viewModel = viewModel,
+        tab = tab,
+        onTab = { tab = it },
+        sidebarMode = layout,
+        twoPane = twoPane,
+        onPickModel = onPickModel,
+    )
 
     if (showModelPicker) {
         ModelPickerSheet(
@@ -521,8 +521,8 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
 }
 
 // ---------------------------------------------------------------------------
-// Responsive shells: phone (bottom bar + drawer) vs pad (nav rail + optional
-// second pane). Both share the same panes, so behaviour cannot drift.
+// ConeCode 工作台外壳：直板手机、Pad、折叠屏使用同一套组件（左侧栏 + 标题行 +
+// 工作台标签条 + 内容区）。窄屏把左侧栏收成图标栏并配抽屉，宽屏常驻侧栏。
 // ---------------------------------------------------------------------------
 
 /** The hosting window, so we can toggle FLAG_SECURE while the mirror is on screen. */
@@ -547,14 +547,16 @@ private fun conversationTitle(snapshot: RemoteSnapshot): String =
         ?: snapshot.conversations.firstOrNull()?.title?.takeIf { it.isNotBlank() }
         ?: "ConeCode"
 
-private fun RemoteTab.icon(): ImageVector = when (this) {
+internal fun RemoteTab.icon(): ImageVector = when (this) {
+    RemoteTab.SCREEN -> Icons.Filled.Computer
     RemoteTab.CHAT -> Icons.Filled.ChatBubbleOutline
     RemoteTab.CHANGES -> Icons.Filled.Difference
     RemoteTab.FILES -> Icons.Filled.Folder
     RemoteTab.TERMINAL -> Icons.Filled.Terminal
 }
 
-private fun RemoteTab.labelRes(): Int = when (this) {
+internal fun RemoteTab.labelRes(): Int = when (this) {
+    RemoteTab.SCREEN -> R.string.remote_desktop
     RemoteTab.CHAT -> R.string.remote_tab_chat
     RemoteTab.CHANGES -> R.string.remote_changes
     RemoteTab.FILES -> R.string.remote_files
@@ -563,183 +565,28 @@ private fun RemoteTab.labelRes(): Int = when (this) {
 
 /** 对话主体：消息流 + 待办/待确认浮层 + 输入框。手机与平板共用。 */
 @Composable
-private fun ChatPane(snapshot: RemoteSnapshot, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+internal fun RemoteConversationPane(
+    snapshot: RemoteSnapshot, viewModel: RemoteViewModel, modifier: Modifier = Modifier,
+    showWorkControls: Boolean = true, showComposer: Boolean = true, showPanels: Boolean = true,
+) {
+    val cx = LocalRemotePalette.current
     Column(modifier = modifier.fillMaxSize()) {
-        MessageList(snapshot = snapshot, modifier = Modifier.weight(1f))
-        Panels(snapshot = snapshot, viewModel = viewModel)
-        Composer(
+        if (showWorkControls) RemoteWorkModes(snapshot, viewModel)
+        key(snapshot.activeConversationId) { MessageList(snapshot = snapshot, viewModel = viewModel, modifier = Modifier.weight(1f)) }
+        if (showPanels) Panels(snapshot = snapshot, viewModel = viewModel)
+        RemoteQueue(snapshot, viewModel)
+        snapshot.error?.takeIf { it.isNotBlank() }?.let {
+            Text(it, color = cx.danger, style = RemoteType.bodySmall,
+                modifier = Modifier.fillMaxWidth().heightIn(max = 96.dp).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp))
+        }
+        if (showComposer) Composer(
             viewModel = viewModel,
             rootPath = snapshot.rootPath,
             isStreaming = snapshot.isStreaming,
-            onSend = viewModel::sendMessage,
+            canQueue = "queue" in snapshot.capabilities,
+            onSend = { if (snapshot.isStreaming && "queue" in snapshot.capabilities) viewModel.enqueueMessage(it) else viewModel.sendMessage(it) },
             onStop = viewModel::stopGeneration,
         )
-    }
-}
-
-/**
- * 桌面版式的外壳：顶部标题栏 + 工作台标签条，左侧会话栏（手机是抽屉，平板常驻）。
- * 这是对着桌面端 ConeCode 的 AppShell / WorkbenchTabs 做的：同样是「侧栏 + 标签页」，
- * 不再用手机常见的底部导航，两端看到的层级关系保持一致。
- */
-@Composable
-private fun MirrorHeader(
-    title: String,
-    modelName: String?,
-    connected: Boolean,
-    insecure: Boolean,
-    tab: RemoteTab,
-    changeCount: Int,
-    onTab: (RemoteTab) -> Unit,
-    onMenu: (() -> Unit)?,
-    onPickModel: () -> Unit,
-) {
-    val cx = LocalRemotePalette.current
-    Column(modifier = Modifier.fillMaxWidth().background(cx.bg1)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(start = 6.dp, end = 10.dp, top = 4.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (onMenu != null) {
-                IconButton(onClick = onMenu, modifier = Modifier.size(34.dp)) {
-                    Icon(
-                        Icons.Filled.Menu,
-                        contentDescription = stringResource(R.string.remote_conversations),
-                        tint = cx.muted,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(if (connected) cx.success else cx.amber),
-                )
-                Spacer(Modifier.size(8.dp))
-            }
-            Text(
-                title,
-                color = cx.text,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (onMenu != null) Spacer(Modifier.size(4.dp))
-            if (insecure) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(cx.amber.copy(alpha = 0.18f))
-                        .border(1.dp, cx.amber, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 7.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Filled.LockOpen, contentDescription = null, tint = cx.amber, modifier = Modifier.size(12.dp))
-                    Spacer(Modifier.size(4.dp))
-                    Text(
-                        stringResource(R.string.remote_insecure_chip),
-                        color = cx.amber,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                }
-                Spacer(Modifier.size(6.dp))
-            }
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(cx.bg3)
-                    .border(1.dp, cx.border, RoundedCornerShape(8.dp))
-                    .clickable(onClick = onPickModel)
-                    .padding(horizontal = 9.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(5.dp)
-                        .clip(CircleShape)
-                        .background(if (connected) cx.success else cx.faint),
-                )
-                Spacer(Modifier.size(6.dp))
-                Text(
-                    modelName ?: stringResource(R.string.remote_no_models),
-                    color = cx.muted,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.size(4.dp))
-                Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = cx.faint, modifier = Modifier.size(14.dp))
-            }
-        }
-        WorkbenchTabStrip(tab = tab, changeCount = changeCount, onTab = onTab)
-    }
-}
-
-/** 桌面 WorkbenchTabs 的迷你版：图标 + 名称 + 待确认数量角标 + 选中下划线。 */
-@Composable
-private fun WorkbenchTabStrip(tab: RemoteTab, changeCount: Int, onTab: (RemoteTab) -> Unit) {
-    val cx = LocalRemotePalette.current
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
-            RemoteTab.values().forEach { entry ->
-                val active = tab == entry
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                        .clickable { onTab(entry) },
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 7.dp, bottom = 6.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            entry.icon(),
-                            contentDescription = null,
-                            tint = if (active) cx.accent else cx.faint,
-                            modifier = Modifier.size(13.dp),
-                        )
-                        Spacer(Modifier.size(5.dp))
-                        Text(
-                            stringResource(entry.labelRes()),
-                            color = if (active) cx.text else cx.muted,
-                            fontSize = 12.sp,
-                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                        )
-                        if (entry == RemoteTab.CHANGES && changeCount > 0) {
-                            Spacer(Modifier.size(4.dp))
-                            Text(
-                                changeCount.toString(),
-                                color = cx.accent,
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(5.dp))
-                                    .background(cx.accentSoft)
-                                    .padding(horizontal = 4.dp, vertical = 0.5.dp),
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .background(if (active) cx.accent else Color.Transparent),
-                    )
-                }
-            }
-        }
-        HorizontalDivider(color = cx.border)
     }
 }
 
@@ -757,7 +604,8 @@ private fun RemoteTabContent(
     var selectedFile by remember(snapshot.rootPath) { mutableStateOf<String?>(null) }
     Box(modifier = modifier.fillMaxSize()) {
         when (tab) {
-            RemoteTab.CHAT -> ChatPane(snapshot, viewModel)
+            RemoteTab.SCREEN -> UuRemoteScreen(viewModel)
+            RemoteTab.CHAT -> RemoteWorkScreen(snapshot, viewModel)
             RemoteTab.CHANGES -> ChangesPage(snapshot, viewModel)
             RemoteTab.FILES -> Row(modifier = Modifier.fillMaxSize()) {
                 if (twoPane) {
@@ -789,106 +637,125 @@ private fun RemoteTabContent(
 }
 
 @Composable
-private fun PhoneMirror(
+private fun ConeCodeShell(
     state: RemoteUiState,
     snapshot: RemoteSnapshot,
     viewModel: RemoteViewModel,
     tab: RemoteTab,
     onTab: (RemoteTab) -> Unit,
-    onPickModel: () -> Unit,
-) {
-    val cx = LocalRemotePalette.current
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-    val terminal = rememberTerminalSession()
-    BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet(drawerContainerColor = cx.bg1, modifier = Modifier.fillMaxWidth(0.82f)) {
-                ConversationSidebar(
-                    snapshot = snapshot,
-                    endpointLabel = state.endpointLabel,
-                    onSwitch = { id ->
-                        viewModel.switchConversation(id)
-                        onTab(RemoteTab.CHAT)
-                        scope.launch { drawerState.close() }
-                    },
-                    onNew = {
-                        viewModel.newConversation()
-                        onTab(RemoteTab.CHAT)
-                        scope.launch { drawerState.close() }
-                    },
-                    onDelete = { id -> viewModel.deleteConversation(id) },
-                    onDisconnect = {
-                        scope.launch { drawerState.close() }
-                        viewModel.disconnect()
-                    },
-                )
-            }
-        },
-    ) {
-        Column(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
-            MirrorHeader(
-                title = conversationTitle(snapshot),
-                modelName = snapshot.model?.name,
-                connected = state.phase == RemotePhase.CONNECTED,
-                insecure = state.insecure,
-                tab = tab,
-                changeCount = snapshot.changes.count { it.status == "pending" },
-                onTab = onTab,
-                onMenu = { scope.launch { drawerState.open() } },
-                onPickModel = onPickModel,
-            )
-            RemoteTabContent(tab, snapshot, viewModel, Modifier.weight(1f), terminal = terminal)
-        }
-    }
-}
-
-@Composable
-private fun PadMirror(
-    state: RemoteUiState,
-    snapshot: RemoteSnapshot,
-    viewModel: RemoteViewModel,
-    tab: RemoteTab,
-    onTab: (RemoteTab) -> Unit,
+    sidebarMode: RemoteLayout,
     twoPane: Boolean,
     onPickModel: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
     val terminal = rememberTerminalSession()
-    Row(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
-        Box(modifier = Modifier.width(276.dp).fillMaxHeight()) {
-            ConversationSidebar(
-                snapshot = snapshot,
-                endpointLabel = state.endpointLabel,
-                onSwitch = {
-                    viewModel.switchConversation(it)
-                    onTab(RemoteTab.CHAT)
-                },
-                onNew = {
-                    viewModel.newConversation()
-                    onTab(RemoteTab.CHAT)
-                },
-                onDelete = { viewModel.deleteConversation(it) },
-                onDisconnect = { viewModel.disconnect() },
-            )
+    val destination = RemoteView.from(snapshot)
+    val onDestination: (RemoteView) -> Unit = { selected ->
+        onTab(RemoteTab.CHAT)
+        viewModel.setViewMode(selected.wireValue)
+    }
+    val density = LocalDensity.current
+    val windowWidth = LocalConfiguration.current.screenWidthDp
+    val sidebarWidth = (windowWidth * 0.26f).coerceIn(220f, 264f).dp
+    var originX by remember { mutableStateOf(0f) }
+    val fold = rememberRemoteFoldingFeature()
+    val hinge = fold?.takeIf {
+        it.orientation == androidx.window.layout.FoldingFeature.Orientation.VERTICAL &&
+            (it.isSeparating || it.occlusionType == androidx.window.layout.FoldingFeature.OcclusionType.FULL)
+    }?.bounds
+    val hingeLeft = hinge?.let { with(density) { (it.left - originX).toDp() } }
+        ?.takeIf { it.value >= 220 && it.value <= windowWidth - 260 }
+    val hingeGap = if (hingeLeft != null) with(density) { (hinge?.width() ?: 0).toDp() } else 0.dp
+
+    // 直板手机与折叠屏外屏都收成图标栏；平板与展开的折叠屏常驻侧栏。
+    // 折叠屏即使被判为 PAD，外屏宽度不足时依旧用图标栏，而不是退回另一套手机 UI。
+    val rail = sidebarMode == RemoteLayout.PHONE || (windowWidth < 720 && hingeLeft == null)
+    var sidebarVisible by rememberSaveable { mutableStateOf(true) }
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
+
+    val sidebar: @Composable () -> Unit = {
+        ConversationSidebar(
+            snapshot = snapshot.copy(conversations = snapshot.conversations.filter { it.viewMode == destination.wireValue }), endpointLabel = state.endpointLabel,
+            destination = destination, onDestination = onDestination,
+            onNew = { viewModel.newConversation(); onTab(RemoteTab.CHAT); scope.launch { drawer.close() } },
+            onSwitch = { viewModel.switchConversation(it); onTab(RemoteTab.CHAT); scope.launch { drawer.close() } },
+            onDelete = viewModel::deleteConversation, onRename = viewModel::renameConversation,
+            onDisconnect = viewModel::disconnect,
+        )
+    }
+    val onMenu: () -> Unit = if (rail) ({ scope.launch { drawer.open() } }) else ({ if (hingeLeft == null) sidebarVisible = !sidebarVisible })
+
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = rail,
+        drawerContent = {
+            if (rail) ModalDrawerSheet(drawerContainerColor = cx.bg1, modifier = Modifier.widthIn(max = 300.dp)) { sidebar() }
+        },
+    ) {
+        Row(Modifier.fillMaxSize().background(cx.bg0).onGloballyPositioned { originX = it.positionInWindow().x }) {
+            if (rail) {
+                CompactNavRail(
+                    destination = destination, onDestination = onDestination, onMenu = onMenu,
+                    onNew = { viewModel.newConversation(); onTab(RemoteTab.CHAT) },
+                    onDisconnect = viewModel::disconnect,
+                )
+            } else if (sidebarVisible || hingeLeft != null) {
+                Box(Modifier.width(hingeLeft ?: sidebarWidth).fillMaxHeight()) { sidebar() }
+                if (hingeGap > 0.dp) Spacer(Modifier.width(hingeGap).fillMaxHeight())
+            }
+            VerticalDivider(color = cx.border)
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                MirrorHeader(
+                    title = conversationTitle(snapshot), modelName = snapshot.model?.name,
+                    connected = state.phase == RemotePhase.CONNECTED, insecure = state.insecure,
+                    tab = tab, changeCount = snapshot.changes.count { it.status == "pending" }, onTab = onTab,
+                    onMenu = if (rail || hingeLeft != null) null else onMenu, onPickModel = onPickModel,
+                    showWorkbenchTabs = destination == RemoteView.WORK,
+                    onScreen = { onTab(if (tab == RemoteTab.SCREEN) RemoteTab.CHAT else RemoteTab.SCREEN) },
+                )
+                when {
+                    tab == RemoteTab.SCREEN -> UuRemoteScreen(viewModel)
+                    destination == RemoteView.CHAT -> RemoteChatScreen(snapshot, viewModel, Modifier.weight(1f))
+                    destination == RemoteView.RSI -> RemoteRsiScreen(snapshot, viewModel, Modifier.weight(1f))
+                    else -> RemoteTabContent(tab, snapshot, viewModel, Modifier.weight(1f),
+                        twoPane = twoPane && !rail && hingeLeft == null, terminal = terminal)
+                }
+            }
         }
-        VerticalDivider(color = cx.border)
-        Column(modifier = Modifier.weight(1f)) {
-            MirrorHeader(
-                title = conversationTitle(snapshot),
-                modelName = snapshot.model?.name,
-                connected = state.phase == RemotePhase.CONNECTED,
-                insecure = state.insecure,
-                tab = tab,
-                changeCount = snapshot.changes.count { it.status == "pending" },
-                onTab = onTab,
-                onMenu = null,
-                onPickModel = onPickModel,
-            )
-            RemoteTabContent(tab, snapshot, viewModel, Modifier.weight(1f), twoPane = twoPane, terminal = terminal)
+    }
+}
+
+/** 窄屏（直板手机 / 折叠屏外屏）的紧凑侧栏：与常驻侧栏同一套 ConeCode 色板与图标。 */
+@Composable
+private fun CompactNavRail(
+    destination: RemoteView,
+    onDestination: (RemoteView) -> Unit,
+    onMenu: () -> Unit,
+    onNew: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    val cx = LocalRemotePalette.current
+    val width = if (LocalConfiguration.current.screenWidthDp < 360) 48.dp else 56.dp
+    Column(
+        modifier = Modifier.width(width).fillMaxHeight().background(cx.bg1)
+            .statusBarsPadding().navigationBarsPadding().padding(bottom = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        IconButton(onClick = onMenu, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Filled.Menu, stringResource(R.string.remote_open_conversations), tint = cx.muted)
+        }
+        IconButton(onClick = onNew, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Filled.Add, stringResource(R.string.remote_new_chat), tint = cx.accent)
+        }
+        Spacer(Modifier.size(6.dp))
+        HorizontalDivider(color = cx.border, modifier = Modifier.padding(horizontal = 10.dp))
+        Spacer(Modifier.size(6.dp))
+        RemoteViewNavigation(destination, compact = true, onSelect = onDestination)
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onDisconnect, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Filled.LinkOff, stringResource(R.string.remote_disconnect), tint = cx.muted)
         }
     }
 }
@@ -901,9 +768,12 @@ private fun PadMirror(
 private fun ConversationSidebar(
     snapshot: RemoteSnapshot,
     endpointLabel: String?,
+    destination: RemoteView,
+    onDestination: (RemoteView) -> Unit,
     onSwitch: (String) -> Unit,
     onNew: () -> Unit,
     onDelete: (String) -> Unit,
+    onRename: (String, String) -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -917,19 +787,10 @@ private fun ConversationSidebar(
             .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(7.dp)
-                    .clip(CircleShape)
-                    .background(cx.accent),
-            )
-            Spacer(Modifier.size(7.dp))
             Text(
-                "CONECODE",
-                color = cx.faint,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 0.6.sp,
+                "ConeCode",
+                color = cx.text,
+                style = RemoteType.brand,
                 modifier = Modifier.weight(1f),
             )
             Row(
@@ -943,7 +804,7 @@ private fun ConversationSidebar(
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null, tint = cx.accent, modifier = Modifier.size(13.dp))
                 Spacer(Modifier.size(4.dp))
-                Text(stringResource(R.string.remote_new_chat), color = cx.accent, fontSize = 11.5.sp)
+                Text(stringResource(R.string.remote_new_chat), color = cx.accent, style = RemoteType.caption)
             }
         }
         Spacer(Modifier.size(12.dp))
@@ -953,14 +814,14 @@ private fun ConversationSidebar(
             Text(
                 stringResource(R.string.remote_conversations),
                 color = cx.muted,
-                fontSize = 11.sp,
+                style = RemoteType.caption,
                 fontWeight = FontWeight.Medium,
             )
             Spacer(Modifier.size(6.dp))
             Text(
                 snapshot.conversations.size.toString(),
                 color = cx.faint,
-                fontSize = 10.sp,
+                style = RemoteType.tiny,
                 fontFamily = FontFamily.Monospace,
             )
         }
@@ -968,8 +829,10 @@ private fun ConversationSidebar(
             snapshot = snapshot,
             onSwitch = onSwitch,
             onDelete = onDelete,
+            onRename = onRename,
             modifier = Modifier.weight(1f),
         )
+        RemoteViewNavigation(destination, compact = false, onSelect = onDestination)
         HorizontalDivider(color = cx.border, modifier = Modifier.padding(vertical = 8.dp))
         Row(
             modifier = Modifier
@@ -982,12 +845,12 @@ private fun ConversationSidebar(
             Icon(Icons.Filled.LinkOff, contentDescription = null, tint = cx.danger, modifier = Modifier.size(15.dp))
             Spacer(Modifier.size(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.remote_disconnect), color = cx.danger, fontSize = 12.5.sp)
+                Text(stringResource(R.string.remote_disconnect), color = cx.danger, style = RemoteType.bodySmall)
                 endpointLabel?.let {
                     Text(
                         it,
                         color = cx.faint,
-                        fontSize = 10.sp,
+                        style = RemoteType.tiny,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1004,10 +867,13 @@ private fun ConversationList(
     snapshot: RemoteSnapshot,
     onSwitch: (String) -> Unit,
     onDelete: (String) -> Unit,
+    onRename: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cx = LocalRemotePalette.current
     var pendingDelete by remember { mutableStateOf<RemoteConversation?>(null) }
+    var renaming by remember { mutableStateOf<RemoteConversation?>(null) }
+    renaming?.let { item -> RemoteRenameDialog(item.title.orEmpty(), { onRename(item.id, it) }, { renaming = null }) }
     Column(modifier = modifier) {
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(snapshot.conversations, key = { it.id }) { conv ->
@@ -1045,7 +911,7 @@ private fun ConversationList(
                             Text(
                                 conv.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.remote_new_chat),
                                 color = if (active) cx.text else cx.muted,
-                                fontSize = 13.sp,
+                                style = RemoteType.body,
                                 fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -1056,14 +922,17 @@ private fun ConversationList(
                             Text(
                                 conv.changedFiles.joinToString(" · "),
                                 color = cx.faint,
-                                fontSize = 10.sp,
+                                style = RemoteType.tiny,
                                 fontFamily = FontFamily.Monospace,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
-                    IconButton(onClick = { pendingDelete = conv }, modifier = Modifier.size(28.dp)) {
+                    if ("renameConversation" in snapshot.capabilities) IconButton(onClick = { renaming = conv }, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.remote_rename), tint = cx.faint, modifier = Modifier.size(15.dp))
+                    }
+                    IconButton(onClick = { pendingDelete = conv }, modifier = Modifier.size(40.dp)) {
                         Icon(
                             Icons.Filled.DeleteOutline,
                             contentDescription = stringResource(R.string.cd_delete),
@@ -1109,7 +978,7 @@ private fun ChangesPage(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Filled.Difference, contentDescription = null, tint = cx.faint, modifier = Modifier.size(30.dp))
                 Spacer(Modifier.size(10.dp))
-                Text(stringResource(R.string.remote_no_changes), color = cx.muted, fontSize = 13.sp)
+                Text(stringResource(R.string.remote_no_changes), color = cx.muted, style = RemoteType.body)
             }
         }
         return
@@ -1122,7 +991,7 @@ private fun ChangesPage(
             Text(
                 text = stringResource(R.string.remote_changes_history, history.size),
                 color = cx.faint,
-                fontSize = 11.sp,
+                style = RemoteType.caption,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 4.dp),
             )
@@ -1171,7 +1040,7 @@ private fun ChangeHistoryCard(change: RemoteChange) {
             Text(
                 kind,
                 color = cx.muted,
-                fontSize = 10.sp,
+                style = RemoteType.tiny,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
@@ -1182,21 +1051,21 @@ private fun ChangeHistoryCard(change: RemoteChange) {
             Text(
                 label,
                 color = cx.text,
-                fontSize = 12.sp,
+                style = RemoteType.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.size(8.dp))
-            Text(statusLabel, color = statusColor, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+            Text(statusLabel, color = statusColor, style = RemoteType.monoSmall)
         }
         if (!isCommand && change.description?.isNotBlank() == true) {
             Spacer(Modifier.size(5.dp))
             Text(
                 change.description,
                 color = cx.muted,
-                fontSize = 11.sp,
+                style = RemoteType.caption,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1208,21 +1077,22 @@ private fun ChangeHistoryCard(change: RemoteChange) {
 private fun FilePanePlaceholder(modifier: Modifier = Modifier) {
     val cx = LocalRemotePalette.current
     Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(stringResource(R.string.remote_pick_file), color = cx.faint, fontSize = 13.sp)
+        Text(stringResource(R.string.remote_pick_file), color = cx.faint, style = RemoteType.body)
     }
 }
 
 @Composable
-private fun MessageList(snapshot: RemoteSnapshot, modifier: Modifier = Modifier) {
+private fun MessageList(snapshot: RemoteSnapshot, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
     val cx = LocalRemotePalette.current
     // Keep tool-result turns in the transcript: they are the desktop's evidence of
     // what a native tool call returned, while local notices remain hidden.
     val messages = remember(snapshot.messages) {
         snapshot.messages.filter { !it.isLocalNotice }
     }
-    val listState = rememberLazyListState()
+    val extraQuestion = snapshot.question?.takeIf { question -> messages.none { it.id == question.id } }
     val streamingLen = snapshot.streamingContent?.length ?: 0
-    val itemCount = messages.size + if (snapshot.isStreaming) 1 else 0
+    val itemCount = messages.size + (if (snapshot.isStreaming) 1 else 0) + (if (extraQuestion != null) 1 else 0)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (itemCount - 1).coerceAtLeast(0))
 
     LaunchedEffect(messages.size, streamingLen, snapshot.isStreaming) {
         if (itemCount <= 0) return@LaunchedEffect
@@ -1230,9 +1100,9 @@ private fun MessageList(snapshot: RemoteSnapshot, modifier: Modifier = Modifier)
         if (lastVisible >= itemCount - 2) listState.animateScrollToItem(itemCount - 1)
     }
 
-    if (messages.isEmpty() && !snapshot.isStreaming) {
+    if (messages.isEmpty() && !snapshot.isStreaming && extraQuestion == null) {
         Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.remote_no_messages), color = cx.muted, fontSize = 14.sp)
+            Text(stringResource(R.string.remote_no_messages), color = cx.muted, style = RemoteType.bodyLarge)
         }
         return
     }
@@ -1242,7 +1112,11 @@ private fun MessageList(snapshot: RemoteSnapshot, modifier: Modifier = Modifier)
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
     ) {
-        items(messages, key = { it.id }) { message -> MessageRow(message) }
+        items(messages, key = { it.id }) { message ->
+            val question = snapshot.question?.takeIf { it.id == message.id }
+            if (question != null) RemoteQuestionCard(question, viewModel) else MessageRow(message)
+        }
+        if (extraQuestion != null) item(key = "__question__${extraQuestion.id}") { RemoteQuestionCard(extraQuestion, viewModel) }
         if (snapshot.isStreaming) {
             item(key = "__streaming__") { StreamingRow(snapshot) }
         }
@@ -1264,7 +1138,7 @@ private fun MessageRow(message: RemoteMessage) {
                     .border(1.dp, cx.border, shape)
                     .padding(horizontal = 13.dp, vertical = 9.dp),
             ) {
-                Text(proseAnnotated(message.content, cx.bg3), color = cx.text, fontSize = 15.sp, lineHeight = 22.sp)
+                Text(message.content, color = cx.text, style = RemoteType.bodyLarge)
             }
         }
     } else {
@@ -1280,14 +1154,14 @@ private fun MessageRow(message: RemoteMessage) {
                     message.reasoningContent.take(700),
                     color = cx.faint,
                     fontStyle = FontStyle.Italic,
-                    fontSize = 13.sp,
+                    style = RemoteType.body,
                     lineHeight = 18.sp,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
             }
             if (message.content.isNotBlank()) RemoteContent(message.content)
             if (message.isToolResult && message.content.isNotBlank()) {
-                Text("tool result", color = cx.faint, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Text("tool result", color = cx.faint, style = RemoteType.monoSmall)
             }
             // Footer: copy button + thinking time + token usage.
             Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1305,7 +1179,7 @@ private fun MessageRow(message: RemoteMessage) {
                     message.tokensUsed?.let { if (it > 0) add("$it $tokensLabel") }
                 }.joinToString("  ·  ")
                 if (meta.isNotEmpty()) {
-                    Text(meta, color = cx.faint, fontSize = 11.sp)
+                    Text(meta, color = cx.faint, style = RemoteType.caption)
                 }
             }
         }
@@ -1325,7 +1199,7 @@ private fun ToolStatusLine(name: String, active: Boolean) {
             Icon(Icons.Filled.Check, contentDescription = null, tint = cx.faint, modifier = Modifier.size(13.dp))
         }
         Spacer(Modifier.size(6.dp))
-        Text(name, color = if (active) cx.accent else cx.muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(name, color = if (active) cx.accent else cx.muted, style = RemoteType.mono, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1349,7 +1223,7 @@ private fun StreamingRow(snapshot: RemoteSnapshot) {
                     thinking.take(700),
                     color = cx.faint,
                     fontStyle = FontStyle.Italic,
-                    fontSize = 13.sp,
+                    style = RemoteType.body,
                     lineHeight = 18.sp,
                     modifier = Modifier.padding(bottom = 6.dp),
                 )
@@ -1390,7 +1264,7 @@ private fun Panels(snapshot: RemoteSnapshot, viewModel: RemoteViewModel) {
     if (snapshot.todos.isEmpty() && pending.isEmpty()) return
     Column(modifier = Modifier.fillMaxWidth()) {
         if (snapshot.todos.isNotEmpty()) TodoPanel(snapshot.todos)
-        if (pending.isNotEmpty()) ApprovalPanel(pending, viewModel)
+        if (pending.isNotEmpty()) ApprovalPanel(pending, viewModel, compact = true)
     }
 }
 
@@ -1407,6 +1281,7 @@ private fun TodoPanel(todos: List<RemoteTodo>) {
     val allDone = done == total
     val current = todos.firstOrNull { it.status == "in_progress" } ?: todos.firstOrNull { it.status != "completed" }
     val fraction = if (total == 0) 0f else done.toFloat() / total
+    val showProgressBar = LocalConfiguration.current.screenWidthDp >= 600
 
     Column(
         modifier = Modifier
@@ -1435,22 +1310,23 @@ private fun TodoPanel(todos: List<RemoteTodo>) {
             Text(
                 stringResource(R.string.remote_todos),
                 color = cx.muted,
-                fontSize = 11.5.sp,
+                style = RemoteType.caption,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
             Spacer(Modifier.size(5.dp))
-            Text("·", color = cx.border, fontSize = 11.5.sp)
+            Text("·", color = cx.border, style = RemoteType.caption)
             Spacer(Modifier.size(5.dp))
             Text(
                 if (allDone) stringResource(R.string.remote_all_done) else current?.content.orEmpty(),
                 color = if (allDone) cx.success else cx.muted,
-                fontSize = 11.5.sp,
+                style = RemoteType.caption,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.size(8.dp))
+            if (showProgressBar) {
             Box(
                 modifier = Modifier
                     .width(44.dp)
@@ -1469,10 +1345,11 @@ private fun TodoPanel(todos: List<RemoteTodo>) {
                 }
             }
             Spacer(Modifier.size(7.dp))
+            }
             Text(
                 "$done/$total",
                 color = if (allDone) cx.success else cx.muted,
-                fontSize = 10.5.sp,
+                style = RemoteType.tiny,
                 fontFamily = FontFamily.Monospace,
             )
         }
@@ -1506,7 +1383,7 @@ private fun TodoPanel(todos: List<RemoteTodo>) {
                                 "in_progress" -> cx.text
                                 else -> cx.muted
                             },
-                            fontSize = 11.5.sp,
+                            style = RemoteType.caption,
                             lineHeight = 16.sp,
                         )
                     }
@@ -1517,57 +1394,46 @@ private fun TodoPanel(todos: List<RemoteTodo>) {
 }
 
 @Composable
-private fun ApprovalPanel(pending: List<RemoteChange>, viewModel: RemoteViewModel) {
+private fun ApprovalPanel(pending: List<RemoteChange>, viewModel: RemoteViewModel, compact: Boolean = false) {
     val cx = LocalRemotePalette.current
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.42f).dp
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(cx.bg0)
-            .heightIn(max = maxHeight)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Filled.Difference, contentDescription = null, tint = cx.amber, modifier = Modifier.size(12.dp))
-            Spacer(Modifier.size(6.dp))
-            Text(
-                stringResource(R.string.remote_pending_changes, pending.size),
-                color = cx.muted,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-            )
-            Spacer(Modifier.weight(1f))
-            if (pending.size > 1) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(7.dp))
-                        .clickable(onClick = viewModel::approveAll)
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                ) {
-                    Text(stringResource(R.string.remote_approve_all, pending.size), color = cx.accent, fontSize = 11.sp)
+    var expanded by rememberSaveable(compact) { mutableStateOf(!compact) }
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * if (compact) 0.32f else 0.6f).dp
+    val imeVisible = androidx.compose.foundation.layout.WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(imeVisible) { if (compact && imeVisible) expanded = false }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(cx.bg2)
+            .then(if (compact) Modifier.clickable { expanded = !expanded } else Modifier)
+            .padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Difference, null, tint = cx.amber, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.remote_pending_changes, pending.size), color = cx.text,
+                style = RemoteType.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            if (compact) Icon(if (expanded) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                null, tint = cx.muted, modifier = Modifier.size(16.dp))
+        }
+        if (expanded) {
+            if (pending.size > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                androidx.compose.material3.TextButton(onClick = viewModel::approveAll) {
+                    Text(stringResource(R.string.remote_approve_all, pending.size), color = cx.accent,
+                        style = RemoteType.bodySmall, maxLines = 1, softWrap = false)
                 }
-                Spacer(Modifier.size(8.dp))
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(7.dp))
-                        .clickable(onClick = viewModel::rejectAll)
-                        .padding(horizontal = 7.dp, vertical = 3.dp),
-                ) {
-                    Text(stringResource(R.string.remote_reject_all), color = cx.danger, fontSize = 11.sp)
+                androidx.compose.material3.TextButton(onClick = viewModel::rejectAll) {
+                    Text(stringResource(R.string.remote_reject_all), color = cx.danger,
+                        style = RemoteType.bodySmall, maxLines = 1, softWrap = false)
                 }
             }
+            Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState())) {
+                pending.forEach { change -> ChangeCard(change, viewModel) }
+            }
         }
-        pending.forEach { change -> ChangeCard(change, viewModel) }
     }
 }
 
 @Composable
 private fun ChangeCard(change: RemoteChange, viewModel: RemoteViewModel) {
     val cx = LocalRemotePalette.current
+    var showDetail by remember(change.id) { mutableStateOf(false) }
+    if (showDetail) RemoteChangeDetail(change, viewModel) { showDetail = false }
     val isCommand = change.filePath == "[Command]"
     val label = if (isCommand) change.newCode.orEmpty() else fileName(change.filePath)
     val kind = if (change.kind == "exec") "Run" else (change.kind ?: "edit")
@@ -1580,11 +1446,11 @@ private fun ChangeCard(change: RemoteChange, viewModel: RemoteViewModel) {
             .border(1.dp, cx.border, RoundedCornerShape(14.dp))
             .padding(horizontal = 11.dp, vertical = 9.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp).clickable { showDetail = true }.padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 kind,
                 color = cx.muted,
-                fontSize = 10.sp,
+                style = RemoteType.tiny,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
@@ -1595,12 +1461,14 @@ private fun ChangeCard(change: RemoteChange, viewModel: RemoteViewModel) {
             Text(
                 label,
                 color = cx.text,
-                fontSize = 12.5.sp,
+                style = RemoteType.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 maxLines = if (isCommand) 3 else 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.remote_change_detail),
+                tint = cx.muted, modifier = Modifier.size(16.dp))
         }
         Row(modifier = Modifier.fillMaxWidth()) {
             ActionButton(
@@ -1637,7 +1505,7 @@ private fun ActionButton(text: String, kind: ButtonKind, modifier: Modifier = Mo
             .padding(vertical = 7.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = fg, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+        Text(text, color = fg, style = RemoteType.bodySmall, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -1650,6 +1518,7 @@ private fun Composer(
     viewModel: RemoteViewModel,
     rootPath: String?,
     isStreaming: Boolean,
+    canQueue: Boolean,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
 ) {
@@ -1696,12 +1565,12 @@ private fun Composer(
                 modifier = Modifier.padding(start = 6.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.Folder, contentDescription = null, tint = cx.faint, modifier = Modifier.size(11.dp))
+                Icon(Icons.Filled.Folder, contentDescription = path, tint = cx.muted, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.size(4.dp))
                 Text(
-                    path,
-                    color = cx.faint,
-                    fontSize = 10.sp,
+                    shortRemotePath(path),
+                    color = cx.muted,
+                    style = RemoteType.caption,
                     fontFamily = FontFamily.Monospace,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1715,7 +1584,7 @@ private fun Composer(
                 .background(cx.bg2)
                 .border(1.dp, cx.border, RoundedCornerShape(20.dp))
                 .padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.Bottom,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Box {
                 Box(
@@ -1732,9 +1601,9 @@ private fun Composer(
                         Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.remote_attach), tint = cx.muted, modifier = Modifier.size(18.dp))
                     }
                 }
-                DropdownMenu(expanded = showAttach, onDismissRequest = { showAttach = false }, containerColor = cx.bg2) {
+                RemoteDropdownMenu(expanded = showAttach, onDismissRequest = { showAttach = false }, containerColor = cx.bg2) {
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.remote_upload), color = cx.text, fontSize = 13.sp) },
+                        text = { Text(stringResource(R.string.remote_upload), color = cx.text, style = RemoteType.body) },
                         leadingIcon = { Icon(Icons.Filled.UploadFile, contentDescription = null, tint = cx.muted, modifier = Modifier.size(17.dp)) },
                         onClick = {
                             showAttach = false
@@ -1742,7 +1611,7 @@ private fun Composer(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.remote_pick_desktop_file), color = cx.text, fontSize = 13.sp) },
+                        text = { Text(stringResource(R.string.remote_pick_desktop_file), color = cx.text, style = RemoteType.body) },
                         leadingIcon = { Icon(Icons.Filled.Folder, contentDescription = null, tint = cx.muted, modifier = Modifier.size(17.dp)) },
                         onClick = {
                             showAttach = false
@@ -1756,20 +1625,29 @@ private fun Composer(
                 value = text,
                 onValueChange = { text = it },
                 placeholder = stringResource(R.string.remote_message_hint),
-                modifier = Modifier.weight(1f).padding(vertical = 6.dp),
+                modifier = Modifier.weight(1f),
                 singleLine = false,
+                embedded = true,
             )
             Spacer(Modifier.size(6.dp))
-            val bg = when {
-                isStreaming -> cx.danger
-                canSend -> cx.accent
-                else -> cx.bg3
+            if (isStreaming && canSend && canQueue) {
+                IconButton(onClick = { onSend(text); text = "" }) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.remote_queue_add), tint = cx.accent)
+                }
             }
+            // 桌面端发送按钮是「圆形 + accent 渐变 + 白色箭头」，停止时换成实底与白色方块。
+            val brush = when {
+                isStreaming -> Brush.linearGradient(listOf(cx.accent, cx.accent))
+                canSend -> Brush.linearGradient(listOf(cx.accent, lerp(cx.accent, Color.White, 0.18f)))
+                else -> Brush.linearGradient(listOf(cx.bg3, cx.bg3))
+            }
+            val stopDescription = stringResource(R.string.remote_stop)
             Box(
                 modifier = Modifier
                     .size(36.dp)
+                    .semantics { if (isStreaming) contentDescription = stopDescription }
                     .clip(CircleShape)
-                    .background(bg)
+                    .background(brush)
                     .clickable(enabled = isStreaming || canSend) {
                         if (isStreaming) {
                             onStop()
@@ -1780,18 +1658,22 @@ private fun Composer(
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    if (isStreaming) Icons.Filled.Stop else Icons.Filled.ArrowUpward,
-                    contentDescription = if (isStreaming) stringResource(R.string.remote_stop) else stringResource(R.string.remote_send),
-                    tint = if (isStreaming || canSend) Color.White else cx.faint,
-                    modifier = Modifier.size(18.dp),
-                )
+                if (isStreaming) {
+                    Box(Modifier.size(11.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+                } else {
+                    Icon(
+                        Icons.Filled.ArrowUpward,
+                        contentDescription = stringResource(R.string.remote_send),
+                        tint = if (canSend) Color.White else cx.faint,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
             }
         }
     }
 
     if (showPicker) {
-        Dialog(onDismissRequest = { showPicker = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        RemoteDialog(onDismissRequest = { showPicker = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Column(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
@@ -1800,7 +1682,7 @@ private fun Composer(
                     IconButton(onClick = { showPicker = false }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = cx.text)
                     }
-                    Text(stringResource(R.string.remote_pick_desktop_file), color = cx.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.remote_pick_desktop_file), color = cx.text, style = RemoteType.title, fontWeight = FontWeight.SemiBold)
                 }
                 HorizontalDivider(color = cx.border)
                 FileBrowser(
@@ -1854,17 +1736,16 @@ private fun ModelPickerSheet(
     // Cap the model list so the sheet stays a reasonable height and scrolls internally.
     val listMax = (LocalConfiguration.current.screenHeightDp * 0.5f).dp
 
-    ModalBottomSheet(
+    RemoteModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = cx.bg1,
-        dragHandle = { BottomSheetDefaults.DragHandle(color = cx.faint) },
     ) {
         Column(modifier = Modifier.navigationBarsPadding().padding(bottom = 8.dp)) {
             // Reasoning effort (思考能力).
             Text(
                 stringResource(R.string.remote_thinking),
                 color = cx.muted,
-                fontSize = 12.sp,
+                style = RemoteType.bodySmall,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
             )
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
@@ -1879,14 +1760,14 @@ private fun ModelPickerSheet(
             Text(
                 stringResource(R.string.remote_pick_model),
                 color = cx.muted,
-                fontSize = 12.sp,
+                style = RemoteType.bodySmall,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
             )
             if (unique.isEmpty()) {
                 Text(
                     stringResource(R.string.remote_no_models),
                     color = cx.muted,
-                    fontSize = 13.sp,
+                    style = RemoteType.body,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                 )
             } else {
@@ -1904,7 +1785,7 @@ private fun ModelPickerSheet(
                                 Text(
                                     model.name.takeIf { it.isNotBlank() } ?: model.id,
                                     color = if (selected) cx.accent else cx.text,
-                                    fontSize = 14.sp,
+                                    style = RemoteType.bodyLarge,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -1912,7 +1793,7 @@ private fun ModelPickerSheet(
                                     Text(
                                         model.id,
                                         color = cx.faint,
-                                        fontSize = 11.sp,
+                                        style = RemoteType.caption,
                                         fontFamily = FontFamily.Monospace,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
@@ -1943,7 +1824,7 @@ private fun EffortChip(value: String, label: String, current: String?, modifier:
             .padding(vertical = 9.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = if (selected) cx.accent else cx.text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+        Text(label, color = if (selected) cx.accent else cx.text, style = RemoteType.body, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 
@@ -1960,7 +1841,7 @@ private fun ConfirmDialog(
     onDismiss: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
-    Dialog(onDismissRequest = onDismiss) {
+    RemoteDialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1969,15 +1850,15 @@ private fun ConfirmDialog(
                 .border(1.dp, cx.border, RoundedCornerShape(16.dp))
                 .padding(20.dp),
         ) {
-            Text(title, color = cx.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(title, color = cx.text, style = RemoteType.heading, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(8.dp))
-            Text(message, color = cx.muted, fontSize = 13.sp, lineHeight = 19.sp)
+            Text(message, color = cx.muted, style = RemoteType.body)
             Spacer(Modifier.size(20.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Text(
                     stringResource(R.string.action_cancel),
                     color = cx.muted,
-                    fontSize = 14.sp,
+                    style = RemoteType.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onDismiss).padding(horizontal = 14.dp, vertical = 8.dp),
                 )
@@ -1985,7 +1866,7 @@ private fun ConfirmDialog(
                 Text(
                     confirmLabel,
                     color = cx.danger,
-                    fontSize = 14.sp,
+                    style = RemoteType.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onConfirm).padding(horizontal = 14.dp, vertical = 8.dp),
                 )
@@ -2008,7 +1889,7 @@ private fun PasswordDialog(
     val wrong = tried && phase == RemotePhase.NEEDS_PASSWORD
     val canSubmit = pw.isNotBlank() && !connecting
     val submit = { if (canSubmit) { tried = true; onSubmit(pw) } }
-    Dialog(onDismissRequest = onDismiss) {
+    RemoteDialog(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2017,10 +1898,10 @@ private fun PasswordDialog(
                 .border(1.dp, cx.border, RoundedCornerShape(16.dp))
                 .padding(20.dp),
         ) {
-            Text(stringResource(R.string.remote_password_title), color = cx.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.remote_password_title), color = cx.text, style = RemoteType.heading, fontWeight = FontWeight.SemiBold)
             if (label.isNotBlank()) {
                 Spacer(Modifier.size(4.dp))
-                Text(label, color = cx.faint, fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(label, color = cx.faint, style = RemoteType.mono, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.size(14.dp))
             DarkInput(
@@ -2035,7 +1916,7 @@ private fun PasswordDialog(
             )
             if (wrong) {
                 Spacer(Modifier.size(6.dp))
-                Text(stringResource(R.string.remote_need_password), color = cx.danger, fontSize = 12.sp)
+                Text(stringResource(R.string.remote_need_password), color = cx.danger, style = RemoteType.bodySmall)
             }
             Spacer(Modifier.size(18.dp))
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -2046,7 +1927,7 @@ private fun PasswordDialog(
                 Text(
                     stringResource(R.string.action_cancel),
                     color = cx.muted,
-                    fontSize = 14.sp,
+                    style = RemoteType.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onDismiss).padding(horizontal = 14.dp, vertical = 8.dp),
                 )
@@ -2054,7 +1935,7 @@ private fun PasswordDialog(
                 Text(
                     stringResource(R.string.remote_connect_btn),
                     color = if (canSubmit) cx.accent else cx.faint,
-                    fontSize = 14.sp,
+                    style = RemoteType.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(enabled = canSubmit) { submit() }.padding(horizontal = 14.dp, vertical = 8.dp),
                 )
@@ -2077,7 +1958,7 @@ private fun PrimaryButton(text: String, onClick: () -> Unit, enabled: Boolean = 
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             leading?.let { it(); Spacer(Modifier.size(8.dp)) }
-            Text(text, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(text, color = Color.White, style = RemoteType.title, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -2095,7 +1976,7 @@ private fun SecondaryButton(text: String, onClick: () -> Unit, enabled: Boolean 
             .padding(vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = if (enabled) cx.text else cx.faint, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        Text(text, color = if (enabled) cx.text else cx.faint, style = RemoteType.bodyLarge, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -2107,23 +1988,23 @@ internal fun DarkInput(
     modifier: Modifier = Modifier,
     singleLine: Boolean = false,
     mask: Boolean = false,
+    embedded: Boolean = false,
     imeAction: ImeAction = ImeAction.Default,
     onImeAction: () -> Unit = {},
 ) {
     val cx = LocalRemotePalette.current
     Box(
         modifier = modifier
-            .heightIn(min = 44.dp, max = 120.dp)
+            .heightIn(min = if (embedded) 40.dp else 44.dp, max = 120.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(cx.bg2)
-            .border(1.dp, cx.border, RoundedCornerShape(18.dp))
-            .padding(horizontal = 14.dp, vertical = 11.dp),
+            .then(if (embedded) Modifier else Modifier.background(cx.bg2).border(1.dp, cx.border, RoundedCornerShape(18.dp)))
+            .padding(horizontal = if (embedded) 2.dp else 14.dp, vertical = if (embedded) 8.dp else 11.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            textStyle = TextStyle(color = cx.text, fontSize = 16.sp, lineHeight = 20.sp),
+            textStyle = RemoteType.input.copy(color = cx.text),
             cursorBrush = SolidColor(cx.accent),
             singleLine = singleLine,
             visualTransformation = if (mask) PasswordVisualTransformation() else VisualTransformation.None,
@@ -2136,7 +2017,7 @@ internal fun DarkInput(
             modifier = Modifier.fillMaxWidth(),
             decorationBox = { inner ->
                 if (value.isEmpty()) {
-                    Text(placeholder, color = cx.faint, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(placeholder, color = cx.faint, style = RemoteType.input, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 inner()
             },
@@ -2158,7 +2039,7 @@ private fun RemoteContent(text: String, modifier: Modifier = Modifier) {
         segments.forEach { segment ->
             when (segment) {
                 is Seg.Prose -> if (segment.text.isNotBlank()) {
-                    Text(proseAnnotated(segment.text, cx.bg2), color = cx.text, fontSize = 15.sp, lineHeight = 22.sp)
+                    RemoteProse(segment.text, cx.bg2)
                 }
                 is Seg.Fence -> {
                     val tool = toolCard(segment.lang, segment.code)
@@ -2173,16 +2054,16 @@ private fun RemoteContent(text: String, modifier: Modifier = Modifier) {
 private fun ToolCard(tool: ToolLine) {
     val cx = LocalRemotePalette.current
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("›", color = cx.faint, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        Text("›", color = cx.faint, style = RemoteType.monoBody)
         Spacer(Modifier.size(8.dp))
-        Text(tool.verb, color = cx.accent, fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+        Text(tool.verb, color = cx.accent, style = RemoteType.monoBody)
         if (tool.detail.isNotBlank()) {
             Spacer(Modifier.size(8.dp))
             Text(
                 tool.detail,
                 color = cx.text,
                 fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
+                style = RemoteType.body,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -2202,7 +2083,7 @@ private fun CodeBlock(code: String) {
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Text(code.trimEnd('\n'), color = cx.text, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp, softWrap = false)
+        Text(code.trimEnd('\n'), color = cx.text, style = RemoteType.monoBody, softWrap = false)
     }
 }
 
@@ -2260,6 +2141,82 @@ private fun toolCard(lang: String, code: String): ToolLine? {
 }
 
 /** Inline `**bold**` and `` `code` `` only — the subset the mobile mirror renders. */
+/** 消息正文的块级结构，对应 ConeCode 的 markdown 渲染：标题与引用走衬线字体。 */
+internal sealed interface ProseBlock {
+    data class Heading(val level: Int, val text: String) : ProseBlock
+    data class Quote(val text: String) : ProseBlock
+    data class Paragraph(val text: String) : ProseBlock
+}
+
+/** 纯函数便于单测：只识别 1–4 级标题和 `>` 引用，其余连续行合并为段落。 */
+internal fun groupProseBlocks(text: String): List<ProseBlock> {
+    val out = mutableListOf<ProseBlock>()
+    val buffer = StringBuilder()
+    fun flush() {
+        if (buffer.isNotEmpty()) { out += ProseBlock.Paragraph(buffer.toString()); buffer.clear() }
+    }
+    text.split('\n').forEach { raw ->
+        val line = raw.trimEnd()
+        val hashes = line.takeWhile { it == '#' }.length
+        when {
+            hashes in 1..4 && line.length > hashes && line[hashes] == ' ' -> {
+                flush()
+                out += ProseBlock.Heading(hashes, line.substring(hashes + 1).trim())
+            }
+            line.startsWith("> ") -> {
+                flush()
+                out += ProseBlock.Quote(line.removePrefix("> ").trim())
+            }
+            else -> {
+                if (buffer.isNotEmpty()) buffer.append('\n')
+                buffer.append(line)
+            }
+        }
+    }
+    flush()
+    return out
+}
+
+@Composable
+private fun RemoteProse(text: String, codeBg: Color, modifier: Modifier = Modifier) {
+    val cx = LocalRemotePalette.current
+    val blocks = remember(text) { groupProseBlocks(text) }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        blocks.forEach { block ->
+            when (block) {
+                is ProseBlock.Heading -> Text(
+                    proseAnnotated(block.text, codeBg),
+                    color = cx.text,
+                    style = when (block.level) {
+                        1 -> RemoteType.serifBody
+                        2 -> RemoteType.serifTitle
+                        3 -> RemoteType.serifTitle.copy(fontSize = 14.sp)
+                        else -> RemoteType.serifTitle.copy(fontSize = 13.sp)
+                    },
+                )
+                is ProseBlock.Quote -> Row(Modifier.fillMaxWidth()) {
+                    Box(
+                        Modifier
+                            .width(3.dp)
+                            .heightIn(min = 18.dp)
+                            .background(cx.accent.copy(alpha = 0.5f), RoundedCornerShape(2.dp)),
+                    )
+                    Spacer(Modifier.size(10.dp))
+                    Text(
+                        proseAnnotated(block.text, codeBg),
+                        color = cx.muted,
+                        style = RemoteType.serifQuote,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                is ProseBlock.Paragraph -> if (block.text.isNotBlank()) {
+                    Text(proseAnnotated(block.text, codeBg), color = cx.text, style = RemoteType.bodyLarge)
+                }
+            }
+        }
+    }
+}
+
 private fun proseAnnotated(text: String, codeBg: Color): AnnotatedString = buildAnnotatedString {
     var i = 0
     while (i < text.length) {

@@ -61,4 +61,35 @@ class RemoteEndpointSecurityTest {
         assertFalse(safe.contains("hunter2"))
         assertTrue(safe.contains("redacted"))
     }
+    @Test
+    fun `pairing fingerprint is retained and malformed pins are rejected`() {
+        val pin = "AB".repeat(32)
+        val endpoint = RemoteEndpoint.parse("https://192.168.1.2:8723/?t=$token&fp=$pin")!!
+        assertEquals(pin.lowercase(), endpoint.fingerprint)
+        assertNull(RemoteEndpoint.parse("https://192.168.1.2:8723/?t=$token&fp=bad"))
+        assertNull(RemoteEndpoint.parse("https://192.168.1.2:8723/?t=$token&fp=${"gg".repeat(32)}"))
+        assertNull(RemoteEndpoint.parse("http://192.168.1.2:8723/?t=$token&fp=$pin"))
+        assertFalse(endpoint.display.contains(pin, ignoreCase = true))
+    }
+
+    @Test
+    fun `https IPv6 pairing retains valid URL brackets`() {
+        assertEquals("https://[::1]:8723", RemoteEndpoint.parse("https://[::1]:8723/?t=$token")!!.base)
+    }
+
+    @Test
+    fun `UU binding identity follows the verified pin not the LAN address`() {
+        val first = RemoteEndpoint("https://192.168.1.2:8723", "one", fingerprint = "aa".repeat(32))
+        val moved = RemoteEndpoint("https://192.168.1.3:8723", "two", fingerprint = "AA".repeat(32))
+        assertEquals(remoteBindingIdentity(first), remoteBindingIdentity(moved))
+        assertFalse(remoteBindingIdentity(first) == remoteBindingIdentity(first.copy(fingerprint = "bb".repeat(32))))
+    }
+
+    @Test
+    fun `unpinned UU binding identities cannot be claimed by another origin or credential`() {
+        val first = RemoteEndpoint("https://first.example.com", "one")
+        assertFalse(remoteBindingIdentity(first) == remoteBindingIdentity(first.copy(base = "https://other.example.com")))
+        assertFalse(remoteBindingIdentity(first) == remoteBindingIdentity(first.copy(token = "two")))
+    }
+
 }

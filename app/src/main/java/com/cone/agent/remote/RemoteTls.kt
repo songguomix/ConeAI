@@ -4,6 +4,7 @@ import android.content.Context
 import com.cone.agent.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
+import java.security.MessageDigest
 import java.security.KeyStore
 import java.security.SecureRandom
 import java.security.cert.CertificateException
@@ -19,14 +20,9 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 /**
- * TLS trust for the desktop-remote HTTPS connection. The ConeCode desktop serves over HTTPS with a
- * static **self-signed** cert (CN=ConeCode, no SAN). We bundle that exact cert (`res/raw/conecode_cert.pem`)
- * and trust it in addition to the system CAs, so:
- *   - LAN pairing (self-signed, IP host) works by **pinning** the bundled cert (hostname check relaxed
- *     only when the peer presents precisely that cert), and
- *   - tunnel URLs (cloudflared/ngrok, real CA-signed certs) keep working via the normal system trust.
- *
- * The secret token still authorizes every request; pinning just secures the transport without a CA.
+ * New LAN links pin the desktop installation's certificate using the SHA-256 in its QR code.
+ * Legacy links retain the bundled certificate fallback. Public tunnels use normal CA validation
+ * because the tunnel, rather than the desktop, terminates TLS.
  */
 @Singleton
 class RemoteTls @Inject constructor(@ApplicationContext private val context: Context) {
@@ -35,7 +31,19 @@ class RemoteTls @Inject constructor(@ApplicationContext private val context: Con
     private val trustManager: X509TrustManager by lazy { buildTrustManager() }
 
     /** Apply the composite trust + pinned-host verifier to a client builder. No-op if the cert is missing. */
-    fun configure(builder: OkHttpClient.Builder): OkHttpClient.Builder {
+    fun configure(builder: OkHttpClient.Builder, fingerprint: String? = null): OkHttpClient.Builder {
+        if (fingerprint != null) {
+            val pinned = FingerprintTrustManager(fingerprint)
+            val sslContext = SSLContext.getInstance("TLS").apply {
+                init(null, arrayOf<TrustManager>(pinned), SecureRandom())
+            }
+            return builder.sslSocketFactory(sslContext.socketFactory, pinned).hostnameVerifier { _, session ->
+                runCatching {
+                    val leaf = session.peerCertificates.firstOrNull() as? X509Certificate
+                    leaf != null && certificateMatchesFingerprint(leaf, fingerprint)
+                }.getOrDefault(false)
+            }
+        }
         val cert = pinnedCert ?: return builder
         val sslContext = SSLContext.getInstance("TLS").apply {
             init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
@@ -97,4 +105,22 @@ class RemoteTls @Inject constructor(@ApplicationContext private val context: Con
         override fun getAcceptedIssuers(): Array<X509Certificate> =
             system.acceptedIssuers + pinned.acceptedIssuers
     }
+}
+
+internal fun certificateMatchesFingerprint(certificate: X509Certificate, fingerprint: String): Boolean {
+    if (!fingerprint.matches(Regex("[0-9a-fA-F]{64}"))) return false
+    val expected = fingerprint.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    return MessageDigest.isEqual(expected, MessageDigest.getInstance("SHA-256").digest(certificate.encoded))
+}
+
+internal class FingerprintTrustManager(private val fingerprint: String) : X509TrustManager {
+    override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) {
+        val leaf = chain.firstOrNull() ?: throw CertificateException("Missing server certificate")
+        leaf.checkValidity()
+        if (!certificateMatchesFingerprint(leaf, fingerprint)) throw CertificateException("Desktop certificate fingerprint mismatch")
+    }
+    override fun checkClientTrusted(chain: Array<out X509Certificate>, authType: String) {
+        throw CertificateException("Client certificates are not accepted")
+    }
+    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
 }

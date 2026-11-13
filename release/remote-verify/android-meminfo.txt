@@ -1,0 +1,72 @@
+Applications Memory Usage (in Kilobytes):
+Uptime: 7873640 Realtime: 7873640
+
+** MEMINFO in pid 18542 [com.cone.agent] **
+                   Pss  Private  Private     Swap      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    25886    25840        0        0    29756    40612    31350     5574
+  Dalvik Heap    10167    10052        0        0    17680    15984     7992     7992
+ Dalvik Other    15434     7472        0        0    24008                           
+        Stack     2720     2720        0        0     2728                           
+       Ashmem       10        0        0        0      612                           
+    Other dev       20        0       20        0      324                           
+     .so mmap     2014      316       68        0    44948                           
+    .jar mmap     2838        0      384        0    50436                           
+    .apk mmap      639        0      188        0     3236                           
+    .ttf mmap      705        0      368        0     1748                           
+    .dex mmap       21        0        0        0      960                           
+    .oat mmap       27        0        0        0     1688                           
+    .art mmap     9569     9204        4        0    32912                           
+   Other mmap    10782        4     4304        0    20632                           
+      Unknown    70830    70700      120        0    72468                           
+        TOTAL   151662   126308     5456        0   304136    56596    39342    13566
+ 
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:    19260                          50592
+         Native Heap:    25840                          29756
+                Code:     1544                         119148
+               Stack:     2720                           2728
+            Graphics:        0                              0
+       Private Other:    82400
+              System:    19898
+             Unknown:                                  101912
+ 
+           TOTAL PSS:   151662            TOTAL RSS:   304136      TOTAL SWAP (KB):        0
+ 
+ Objects
+               Views:       16         ViewRootImpl:        2
+         AppContexts:        8           Activities:        2
+              Assets:       21        AssetManagers:        0
+       Local Binders:       33        Proxy Binders:       65
+       Parcel memory:       15         Parcel count:       62
+    Death Recipients:        1             WebViews:        0
+ 
+ Native Allocations
+                         Count                       Total(kB)
+                        ------                         ------
+    Other (malloced):      655                             61
+ Other (nonmalloced):      116                             83
+   Bitmap (malloced):       40                             41
+ 
+ SQL
+         MEMORY_USED:      464
+  PAGECACHE_OVERFLOW:      167          MALLOC_SIZE:       46
+ 
+ DATABASES
+      pgsz     dbsz   Lookaside(b) cache hits cache misses cache size  Dbname
+PER CONNECTION STATS
+         4       40             68    69    37     6  /data/user/0/com.cone.agent/databases/com.google.android.datatransport.events
+         4       48             70    12   104     9  /data/user/0/com.cone.agent/databases/cone-agent.db
+         4        8                    0     0     0    (attached) temp
+         4      104            111     4    31     6  /data/user/0/com.cone.agent/no_backup/androidx.work.workdb
+         4        8                    0     0     0    (attached) temp
+         4      104             32     4    15     3  /data/user/0/com.cone.agent/no_backup/androidx.work.workdb (2)
+POOL STATS
+     cache hits  cache misses    cache size  Dbname
+             69            38             6  /data/user/0/com.cone.agent/databases/com.google.android.datatransport.events
+             12           107             9  /data/user/0/com.cone.agent/databases/cone-agent.db
+              8            50             9  /data/user/0/com.cone.agent/no_backup/androidx.work.workdb
+ 

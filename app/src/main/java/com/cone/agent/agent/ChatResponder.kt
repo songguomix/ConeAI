@@ -10,8 +10,9 @@ import com.cone.agent.data.remote.dto.ContentPart
 import com.cone.agent.agent.action.ActionType
 import com.cone.agent.agent.action.PlannedAction
 import com.cone.agent.data.repository.ChatRepository
-import com.cone.agent.data.repository.MemoryRepository
-import com.cone.agent.data.repository.MemoryWrite
+import com.cone.agent.memory.records.MemoryChange
+import com.cone.agent.memory.records.MemoryService
+import com.cone.agent.memory.records.RememberOutcome
 import com.cone.agent.data.repository.ProviderRepository
 import com.cone.agent.data.repository.SettingsRepository
 import com.cone.agent.domain.model.ConversationMode
@@ -44,9 +45,7 @@ class ChatResponder @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val dailyInfo: DailyInfoService,
     private val webSearchClient: WebSearchClient,
-    private val memoryRepository: MemoryRepository,
-    private val memoryExtractor: MemoryExtractor,
-    private val memoryContext: MemoryContext,
+    private val memoryService: MemoryService,
     private val chatRepository: ChatRepository,
     private val executor: ActionExecutor,
     private val mcpManager: McpManager,
@@ -126,7 +125,15 @@ $dynamicSections
             tokens = sumTokens(tokens, reply.totalTokens)
             val tool = (if (rounds < MAX_TOOL_ROUNDS) parseToolCall(reply.content, memoryActive, onAgentTask != null) else null)
                 ?: run {
-                    memoryExtractor.observe(question, reply.content, incognito = !memoryActive, onSaved = ::noteMemoryChanges)
+                    memoryService.observeExchange(
+                        question,
+                        reply.content,
+                        projectId = null,
+                        projectName = null,
+                        sessionId = null,
+                        incognito = !memoryActive,
+                        onSaved = ::noteMemoryChanges,
+                    )
                     return Result.success(Answer(reply.content, tokens))
                 }
             // Handoff to the agent ends the Q&A turn: the confirmation line IS the answer.
@@ -208,7 +215,15 @@ $dynamicSections
             if (tool == null) {
                 if (holding && buffer.isNotEmpty()) emit(ChatChunk.Delta(buffer.toString()))
                 emit(ChatChunk.Done(tokens))
-                memoryExtractor.observe(question, buffer.toString(), incognito = !memoryActive, onSaved = ::noteMemoryChanges)
+                memoryService.observeExchange(
+                    question,
+                    buffer.toString(),
+                    projectId = null,
+                    projectName = null,
+                    sessionId = null,
+                    incognito = !memoryActive,
+                    onSaved = ::noteMemoryChanges,
+                )
                 return@flow
             }
             // Handoff to the agent ends the Q&A turn: the confirmation line IS the answer.
@@ -345,21 +360,22 @@ $dynamicSections
     /* ---------------- 问答记忆（Gemini 式，仅存本机） ---------------- */
 
     private suspend fun memoryActive(incognito: Boolean): Boolean =
-        !incognito && memoryRepository.enabled.first()
+        !incognito && memoryService.enabled.first()
 
     /** The 【记忆】 prompt block: saved facts + when/how to call remember / forget. Empty when off. */
     private suspend fun memorySection(active: Boolean, question: String = ""): String {
         if (!active) return ""
-        val memories = memoryContext.relevant(question, MemoryContext.CHAT_LIMIT)
+        // Memory 2.0: only the records retrieved for THIS question reach the prompt.
+        val block = memoryService.retrieveBlock(question, projectId = null, limit = 8)
         return buildString {
             append("\n【记忆】")
-            if (memories.isEmpty()) {
+            if (block.isBlank()) {
                 appendLine("目前还没有记住的用户信息。")
             } else {
                 appendLine("以下是此前对话中记住的用户信息，回答时自然地运用，不要无故复述：")
-                append(memoryContext.format(memories))
+                appendLine(block)
             }
-            // 保存这件事已经由 MemoryExtractor 在每轮结束后自动完成，模型不必也不应为此多走一轮工具调用
+            // 保存这件事已经由 MemoryService 在每轮结束后自动完成，模型不必也不应为此多走一轮工具调用
             // ——那正是过去「不明确说记住就记不下来」的原因。这里只留下模型独有的能力：
             // 用户明确要求忘记时删除（自动抽取只会新增，永远不会替用户决定删掉什么）。
             append("""用户明确要求忘记某件事，或表示某条记忆已过时，用 {"tool":"forget","query":"关键词"} 删除。""")
@@ -391,18 +407,18 @@ $dynamicSections
     private suspend fun remember(query: String?): String {
         val fact = query?.trim().orEmpty()
         if (fact.isEmpty()) return "remember 需要 query 里给出要记住的一句话。"
-        return when (memoryRepository.add(fact)) {
-            MemoryWrite.ADDED -> "已记住：$fact"
-            MemoryWrite.REFINED -> "已更新为更具体的说法：$fact"
-            MemoryWrite.DUPLICATE -> "这条信息已在记忆中。"
-            MemoryWrite.REJECTED -> "这条内容不能存入记忆（密码、验证码、证件号等敏感信息一律不保存）。"
+        return when (memoryService.remember(fact)) {
+            RememberOutcome.ADDED -> "已记住：$fact"
+            RememberOutcome.UPDATED -> "已更新为更具体的说法：$fact"
+            RememberOutcome.DUPLICATE -> "这条信息已在记忆中。"
+            RememberOutcome.REJECTED -> "这条内容不能存入记忆（密码、验证码、证件号等敏感信息一律不保存）。"
         }
     }
 
     private suspend fun forget(query: String?): String {
         val keyword = query?.trim().orEmpty()
         if (keyword.isEmpty()) return "forget 需要 query 里给出要忘记的关键词。"
-        val removed = memoryRepository.forget(keyword)
+        val removed = memoryService.forget(keyword)
         return if (removed.isEmpty()) {
             "没有找到与「$keyword」匹配的记忆。"
         } else {

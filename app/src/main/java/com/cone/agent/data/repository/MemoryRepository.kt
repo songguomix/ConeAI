@@ -79,13 +79,14 @@ enum class MemoryWrite {
 }
 
 /**
- * 问答记忆：facts the user shared in Q&A, persisted **on-device only** and injected into the Q&A
- * system prompt so answers are personalised.
+ * 旧版问答记忆：flat facts the user shared in Q&A, persisted on-device.
  *
- * Captured automatically after each turn (see MemoryExtractor) rather than only when the user says
- * "记住…", managed by the user in Settings (toggle / edit / per-item delete / clear all). Kept in
- * its own DataStore file — deliberately not a Room table, so the chat database's destructive
- * migration fallback can never wipe memories (and vice versa).
+ * **Legacy / migration source only.** The Q&A memory is now Memory 2.0
+ * ([com.cone.agent.memory.records.MemoryService]): typed records with classification, dedupe,
+ * retrieval and version history. This store is read exactly once by
+ * [com.cone.agent.memory.records.MemoryRecordStore] to carry the old facts over as confirmed
+ * global user facts; nothing writes to it any more, and its DataStore file is left untouched so a
+ * downgrade never loses data.
  */
 @Singleton
 class MemoryRepository @Inject constructor(

@@ -58,8 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cone.agent.R
 import com.cone.agent.core.Constants
 import com.cone.agent.data.local.entity.VisionModelView
-import com.cone.agent.data.repository.MemoryCategory
-import com.cone.agent.data.repository.MemoryItem
+import com.cone.agent.memory.records.MemoryRecord
 import com.cone.agent.data.repository.ScreenMode
 import com.cone.agent.ui.theme.ConeShapes
 
@@ -73,6 +72,7 @@ fun SettingsScreen(
     val autoConfirm by viewModel.autoConfirmHighRisk.collectAsStateWithLifecycle()
     val planMode by viewModel.planModeEnabled.collectAsStateWithLifecycle()
     val memoryEnabled by viewModel.memoryEnabled.collectAsStateWithLifecycle()
+    val dreamAuto by viewModel.dreamAuto.collectAsStateWithLifecycle()
     val memories by viewModel.memories.collectAsStateWithLifecycle()
     val screenMode by viewModel.screenMode.collectAsStateWithLifecycle()
     val searchEngine by viewModel.searchEngine.collectAsStateWithLifecycle()
@@ -85,6 +85,7 @@ fun SettingsScreen(
     val ttsModel by viewModel.ttsModel.collectAsStateWithLifecycle()
     val ttsVoice by viewModel.ttsVoice.collectAsStateWithLifecycle()
     val language by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val appUpdate by viewModel.appUpdate.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -106,6 +107,13 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
+            AppUpdateSettingsSection(
+                state = appUpdate,
+                onCheck = viewModel::checkForUpdates,
+                onShowPrompt = viewModel::showUpdatePrompt,
+                onDismissPrompt = viewModel::dismissUpdatePrompt,
+            )
+
             SettingsGroupLabel(R.string.settings_group_recognition)
             SettingsCard {
                 SettingsSectionHeader(
@@ -252,6 +260,26 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.setMemoryEnabled(it) },
                     )
                 }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                // 记忆整理（ConeCode 的 dream）：把结束的任务沉淀成项目笔记，默认关闭。
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.settings_dream_auto), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.settings_dream_auto_desc),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = dreamAuto,
+                        onCheckedChange = { viewModel.setDreamAuto(it) },
+                    )
+                }
                 if (memories.isEmpty()) {
                     Text(
                         stringResource(R.string.settings_memory_empty),
@@ -265,19 +293,19 @@ fun SettingsScreen(
                     // default, showing the newest few, with the count on the toggle so it stays obvious
                     // that more is stored.
                     var memoriesExpanded by remember { mutableStateOf(false) }
-                    var editing by remember { mutableStateOf<MemoryItem?>(null) }
+                    var editing by remember { mutableStateOf<MemoryRecord?>(null) }
                     // Newest first, so what the assistant just learned is what the user sees.
                     val ordered = memories.sortedByDescending { it.updatedAt }
                     val shown = if (memoriesExpanded) ordered else ordered.take(COLLAPSED_MEMORIES)
                     // Grouped only once expanded: the collapsed peek is a short recency list, while the
                     // full view is a profile the user reads by dimension.
                     if (memoriesExpanded) {
-                        shown.groupBy { it.categoryEnum }
+                        shown.groupBy { it.layer }
                             .toList()
-                            .sortedBy { it.first.ordinal }
-                            .forEach { (category, items) ->
+                            .sortedBy { it.first }
+                            .forEach { (layer, items) ->
                                 Text(
-                                    stringResource(memoryCategoryLabel(category)),
+                                    stringResource(memoryLayerLabel(layer)),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.padding(top = 12.dp, bottom = 2.dp),
@@ -556,18 +584,18 @@ private val UiLanguages = listOf(
 
 private const val COLLAPSED_MEMORIES = 5
 
-private fun memoryCategoryLabel(category: MemoryCategory): Int = when (category) {
-    MemoryCategory.IDENTITY -> R.string.memory_category_identity
-    MemoryCategory.PREFERENCE -> R.string.memory_category_preference
-    MemoryCategory.RELATIONSHIP -> R.string.memory_category_relationship
-    MemoryCategory.HABIT -> R.string.memory_category_habit
-    MemoryCategory.GOAL -> R.string.memory_category_goal
-    MemoryCategory.OTHER -> R.string.memory_category_other
+private fun memoryLayerLabel(layer: String): Int = when (layer) {
+    "global" -> R.string.memory_layer_global
+    "project" -> R.string.memory_layer_project
+    "episodic" -> R.string.memory_layer_episodic
+    "semantic" -> R.string.memory_layer_semantic
+    "working" -> R.string.memory_layer_working
+    else -> R.string.memory_layer_other
 }
 
 /** One saved fact: tap the text to correct it, the ✕ to forget it. */
 @Composable
-private fun MemoryRow(item: MemoryItem, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun MemoryRow(item: MemoryRecord, onEdit: () -> Unit, onDelete: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,

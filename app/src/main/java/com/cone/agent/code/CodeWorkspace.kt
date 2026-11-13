@@ -175,6 +175,73 @@ class CodeWorkspace @Inject constructor(
     fun exists(project: CodeProject, path: String): Boolean =
         resolve(project, path)?.exists() == true
 
+    /** Creates a directory (and any missing parents) inside the project. */
+    suspend fun createDir(project: CodeProject, path: String): Result<Unit> = withContext(Dispatchers.IO) {
+        if (path.isBlank()) return@withContext Result.failure(IllegalArgumentException("缺少 path"))
+        val dir = resolve(project, path) ?: return@withContext Result.failure(reject(path))
+        if (dir.exists() && !dir.isDirectory) {
+            return@withContext Result.failure(IllegalArgumentException("已存在同名文件：$path"))
+        }
+        runCatching {
+            if (!dir.isDirectory && !dir.mkdirs()) error("创建目录失败：$path")
+            touch(project)
+        }
+    }
+
+    /** Copies a file or directory inside the project; an existing destination is refused, never overwritten. */
+    suspend fun copy(project: CodeProject, from: String, to: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val src = resolve(project, from) ?: return@withContext Result.failure(reject(from))
+        val dst = resolve(project, to) ?: return@withContext Result.failure(reject(to))
+        if (!src.exists()) return@withContext Result.failure(IllegalArgumentException("文件不存在：$from"))
+        if (dst.exists()) return@withContext Result.failure(IllegalArgumentException("目标已存在：$to"))
+        runCatching {
+            dst.parentFile?.mkdirs()
+            if (src.isDirectory) {
+                if (!dst.mkdirs() && !dst.isDirectory) error("复制失败：$from → $to")
+                copyTree(src, dst)
+            } else {
+                src.copyTo(dst, overwrite = false)
+            }
+            touch(project)
+        }
+    }
+
+    /** Writes raw bytes (an image, font or zip fetched by `download`) into the project. */
+    suspend fun writeBytes(project: CodeProject, path: String, bytes: ByteArray): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            val file = resolve(project, path) ?: return@withContext Result.failure(reject(path))
+            if (file.isDirectory) {
+                return@withContext Result.failure(IllegalArgumentException("这是一个目录，不能写入：$path"))
+            }
+            runCatching {
+                file.parentFile?.mkdirs()
+                file.writeBytes(bytes)
+                touch(project)
+            }
+        }
+
+    /** One directory's listing as indented text; a blank [path] lists the whole project. */
+    suspend fun listDir(project: CodeProject, path: String): Result<String> = withContext(Dispatchers.IO) {
+        val base = dirOf(project)
+        val target = if (path.isBlank()) base else resolve(project, path)
+            ?: return@withContext Result.failure(reject(path))
+        when {
+            !target.exists() -> return@withContext Result.failure(IllegalArgumentException("目录不存在：$path"))
+            !target.isDirectory -> return@withContext Result.failure(IllegalArgumentException("这是一个文件：$path"))
+        }
+        val nodes = ArrayList<CodeNode>()
+        walk(base, target, 0, nodes)
+        if (nodes.isEmpty()) return@withContext Result.success("（空目录）")
+        val prefix = if (path.isBlank()) "" else path.trim('/') + "/"
+        Result.success(
+            nodes.joinToString("\n") { node ->
+                val indent = "  ".repeat(node.depth)
+                val rel = node.path.removePrefix(prefix)
+                if (node.isDir) "$indent$rel/" else "$indent$rel  (${node.size} B)"
+            },
+        )
+    }
+
     /**
      * Grep across the project, returning `path:line: text` hits. [regex] switches from a plain
      * case-insensitive substring to a full regular expression; a pattern that does not compile is

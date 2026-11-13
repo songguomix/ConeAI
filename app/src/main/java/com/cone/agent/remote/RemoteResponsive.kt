@@ -1,62 +1,81 @@
 package com.cone.agent.remote
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.window.layout.FoldingFeature
+import androidx.window.layout.WindowInfoTracker
+import androidx.window.layout.WindowLayoutInfo
+import kotlinx.coroutines.flow.flowOf
 
 /**
- * 远程镜像的两种版式。
- *
- * - [PHONE]：单栏 + 顶部栏 + 底部标签栏，对话列表放在抽屉里。
- * - [PAD]：左侧常驻导航栏；宽屏（>=840dp）再展开第二栏——对话列表 / 文件树常驻，
- *   聊天与编辑器占右侧主区域。
+ * 侧栏呈现方式。两者都渲染同一个 ConeCode 工作台外壳（相同的侧栏内容、标题栏、
+ * 标签条和内容区），只是窄屏把侧栏收成紧凑图标栏，宽屏常驻展开。
  */
 internal enum class RemoteLayout { PHONE, PAD }
-
-/** 双栏（列表 + 主区域）的最小宽度；低于它的 PAD 版式只保留导航栏 + 单栏。 */
+internal const val REMOTE_PAD_MIN_WIDTH_DP = 600
 internal const val REMOTE_TWO_PANE_WIDTH_DP = 840
 
-/** 进入 PAD 版式的最小宽度（平板 / 展开的折叠屏）。 */
-internal const val REMOTE_PAD_MIN_WIDTH_DP = 600
-
-/**
- * 折叠屏判定：铰链传感器是折叠屏独有的特性。
- *
- * 版本选择上，折叠屏展开后由宽度自然命中 PAD；折起来只有手机宽度，继续用手机版式，
- * 避免在 320dp 的外屏里硬塞 76dp 导航栏。这里仅用于把折叠屏和其它设备区分开，
- * 便于将来按铰链状态做分屏。
- */
-@Composable
-internal fun rememberFoldableDevice(): Boolean {
-    val packageManager = LocalContext.current.packageManager
-    return remember(packageManager) {
-        packageManager.hasSystemFeature("android.hardware.sensor.hinge_angle") ||
-            packageManager.hasSystemFeature("android.hardware.sensor.hinge")
-    }
+private fun Context.remoteActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.remoteActivity()
+    else -> null
 }
 
-/**
- * 版式判定：
- * 1. 折叠屏按当前宽度取 [RemoteLayout.PAD] / [RemoteLayout.PHONE]；
- * 2. 最短边 >= 600dp（平板 / 展开的折叠屏）或当前宽度 >= 840dp（横屏手机）→ [RemoteLayout.PAD]；
- * 3. 其余 → [RemoteLayout.PHONE]。
- */
+/** WindowManager reports the actual hinge, including posture changes while connected. */
+@Composable
+internal fun rememberRemoteFoldingFeature(): FoldingFeature? {
+    val context = LocalContext.current
+    val activity = remember(context) { context.remoteActivity() }
+    val flow = remember(activity) {
+        activity?.let { WindowInfoTracker.getOrCreate(context).windowLayoutInfo(it) }
+            ?: flowOf(WindowLayoutInfo(emptyList()))
+    }
+    val info by flow.collectAsStateWithLifecycle(initialValue = WindowLayoutInfo(emptyList()))
+    return info.displayFeatures.filterIsInstance<FoldingFeature>().firstOrNull()
+}
+
+/** Keep the same Pad navigation on both displays; ConeCodeShell collapses its sidebar on narrow windows. */
 @Composable
 internal fun rememberRemoteLayout(): RemoteLayout {
     val configuration = LocalConfiguration.current
-    val width = configuration.screenWidthDp
-    val foldable = rememberFoldableDevice()
-    return when {
-        // 折叠屏以当前展开宽度为准：外屏窄，按手机版式；展开后按 Pad。
-        foldable -> if (width >= REMOTE_PAD_MIN_WIDTH_DP) RemoteLayout.PAD else RemoteLayout.PHONE
-        configuration.smallestScreenWidthDp >= REMOTE_PAD_MIN_WIDTH_DP -> RemoteLayout.PAD
-        width >= REMOTE_TWO_PANE_WIDTH_DP -> RemoteLayout.PAD
-        else -> RemoteLayout.PHONE
+    val context = LocalContext.current
+    val hardwareFoldable = remember(context) {
+        context.packageManager.hasSystemFeature("android.hardware.sensor.hinge_angle") ||
+            context.packageManager.hasSystemFeature("com.samsung.android.feature.FOLDABLE") ||
+            context.packageManager.hasSystemFeature("com.samsung.feature.device_category_foldable")
     }
+    val foldingFeature = rememberRemoteFoldingFeature()
+    var knownFoldable by rememberSaveable { mutableStateOf(hardwareFoldable) }
+    LaunchedEffect(foldingFeature) { if (foldingFeature != null) knownFoldable = true }
+    return remoteLayoutFor(configuration.screenWidthDp, configuration.smallestScreenWidthDp,
+        hardwareFoldable || knownFoldable || foldingFeature != null)
 }
 
-/** 是否可以把列表与主区域并排放：宽度够（平板横屏 / 展开的折叠屏）才双栏。 */
+internal fun remoteLayoutFor(width: Int, smallestWidth: Int, foldable: Boolean): RemoteLayout = when {
+    foldable -> RemoteLayout.PAD
+    smallestWidth >= REMOTE_PAD_MIN_WIDTH_DP -> RemoteLayout.PAD
+    width >= REMOTE_TWO_PANE_WIDTH_DP -> RemoteLayout.PAD
+    else -> RemoteLayout.PHONE
+}
+
 @Composable
 internal fun rememberRemoteTwoPane(): Boolean =
     LocalConfiguration.current.screenWidthDp >= REMOTE_TWO_PANE_WIDTH_DP
+
+/** Last two directory levels keep Windows and POSIX paths readable on narrow screens. */
+internal fun shortRemotePath(path: String): String {
+    val normalized = path.replace('\\', '/').trimEnd('/')
+    val parts = normalized.split('/').filter { it.isNotEmpty() }
+    return if (parts.size <= 2) normalized.ifEmpty { "/" } else "…/" + parts.takeLast(2).joinToString("/")
+}

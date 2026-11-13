@@ -1,0 +1,19 @@
+{
+  "android": {
+    "pssKiB": 146219,
+    "rssKiB": 297280,
+    "swapKiB": 0,
+    "crashLog": "android-crash-final.txt",
+    "scope": "Single final APK sample in Android emulator; not a long-duration leak test."
+  },
+  "hostAfterTestCleanup": {
+    "rendererHeapMiB": 104,
+    "rendererHeapLimitMiB": 400,
+    "freeMemory": "2.2G",
+    "freeMemoryFloorMiB": 500,
+    "loadPerCpu": 0.4,
+    "loadLimit": 4,
+    "verdict": "no defect in this snapshot"
+  },
+  "cleanup": "Closed the emulator launched for this verification; test results and screenshots retained."
+}

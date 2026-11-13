@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "checks": [
+    "Android HTTPS pairing with per-install certificate fingerprint",
+    "File browser opens a desktop file",
+    "File editor saves desktop content",
+    "Native terminal command and output",
+    "UU missing-client guidance",
+    "UU screen entry adapts to tablet and narrow foldable windows",
+    "Official UU Remote 4.47.0 installation detection",
+    "Real official UU client opens through authorize Deeplink",
+    "Unsolicited external callback cannot create a device binding",
+    "No Android fatal exception during verification"
+  ],
+  "scope": "Native file save/terminal and official UU client installation/launch; no account or live device binding."
+}

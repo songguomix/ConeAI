@@ -65,7 +65,9 @@ Two modes and an always-available voice capsule:
 ### ConeCode Remote (Desktop)
 - Scan the ConeCode desktop pairing QR (`?t=token&p=password`) to mirror desktop AI sessions: messages, session/model/reasoning switch, approve/reject code changes
 - Built-in file browser/editor + one-shot terminal — **execute on desktop**, phone is a remote
-- Transport: HTTPS + pinned self-signed cert (LAN), tunnel domains (cloudflared/ngrok) use system CA; password stored only encrypted in Keystore with biometric unlock; plaintext settings keep pairing URL **without** password
+- Session transport: LAN HTTPS pins the per-install certificate fingerprint `fp` from the QR (with legacy certificate compatibility); tunnel domains use the system CA. Passwords remain encrypted with biometric unlock
+- Chat, Work and RSI are separate destinations. Work exposes only Standard and Goal. Phones, tablets and foldable windows share the same workbench components
+- Remote screen control uses the official **UU Remote** Deeplink integration for device binding, fullscreen and picture-in-picture. Requires Android UU Remote 4.42.0+ and the same UU account on phone and computer. This opens UU Remote rather than embedding a video SDK. See [integration notes](docs/UU_REMOTE.md)
 - QR itself is a credential — only show in trusted environments
 
 ### General
@@ -208,7 +210,7 @@ Then type a task on the home screen.
 - Credentials **never sent via plaintext http to public hosts** (network guard); plaintext only to localhost/LAN for local models (Ollama / LM Studio / vLLM).
 - STT is **offline**; web search only when you enable it; wake-word service writes nothing to system log in release builds.
 - API Keys encrypted via Android Keystore, backup rules exclude DB; desktop remote passwords likewise.
-- `<queries>` is restricted (only launchable apps), no `QUERY_ALL_PACKAGES`.
+- `<queries>` is restricted to launchable apps and the UU Remote package/scheme needed for installation detection; no `QUERY_ALL_PACKAGES`.
 
 ---
 

@@ -1,0 +1,28 @@
+{
+  "apk": "release/remote-verify/ConeAI-remote-debug.apk",
+  "bytes": 63074186,
+  "sha256": "b4a40106f758811e92ae7c05036ebb7c57b99ab4aec9d10217ba477bf9f4f5cf",
+  "unitTests": {
+    "tests": 140,
+    "failures": 0,
+    "errors": 0
+  },
+  "androidInstrumentationTests": 5,
+  "layoutChecks": 10,
+  "regionScreenshotsBefore": 23,
+  "regionScreenshotsAfter": 23,
+  "nativeUiAndUuChecks": 10,
+  "boundaries": [
+    "UU client launched without accepting privacy terms or logging in; real video/PiP connection not verified.",
+    "Foldable windows were emulated; no hardware hinge posture available."
+  ],
+  "finalApkSmoke": {
+    "passed": true,
+    "checks": [
+      "Android HTTPS pairing with per-install certificate fingerprint",
+      "Latest APK opens the installed UU entry without reusing an unbound device",
+      "Test pairing login cleared through the app UI"
+    ]
+  },
+  "androidMemorySummary": "TOTAL PSS:   146219            TOTAL RSS:   297280      TOTAL SWAP (KB):        0"
+}

@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -407,75 +408,140 @@ private fun FolderRow(name: String, up: Boolean, onClick: () -> Unit) {
     }
 }
 
-/* ---------------------------------- 工作流记忆 ---------------------------------- */
+/* ---------------------------------- 记忆 ---------------------------------- */
 
 /**
- * The user's standing coding habits — what they prefer in *every* project, as distinct from the
- * per-project conventions that live in the project's own CONE.md.
+ * 记忆：ConeCode 的 Memory 2.0，两个来源放在同一张表里。
  *
- * Automatic capture has to be visible to be acceptable: the agent writes these on its own when the
- * user states a preference, so the list, the switch and the per-item delete are what make that
- * bearable rather than unsettling.
+ * - 全局记忆：跨项目生效的长期事实（问答与代码共用），来自自动抽取与 remember。
+ * - 本项目记忆：dream 从本项目结束的会话里整理出的主题笔记，只在本项目里注入。
+ *
+ * 自动写入必须可见才可接受：开关、清单和逐条删除就是让这件事可接受的东西。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CodeWorkflowMemorySheet(viewModel: CodeViewModel, onDismiss: () -> Unit) {
-    val memories by viewModel.workflowMemories.collectAsStateWithLifecycle()
-    val enabled by viewModel.workflowEnabled.collectAsStateWithLifecycle()
+    val global by viewModel.memoryRecords.collectAsStateWithLifecycle()
+    val notes by viewModel.dreamNotes.collectAsStateWithLifecycle()
+    val enabled by viewModel.memoryEnabled.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var clearing by remember { mutableStateOf(false) }
+    var clearingGlobal by remember { mutableStateOf(false) }
+    var clearingProject by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { viewModel.refreshDreamNotes() }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.code_workflow_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    stringResource(R.string.code_workflow_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.code_memory_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        stringResource(R.string.code_memory_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = { viewModel.setMemoryEnabled(it) })
             }
-            Switch(checked = enabled, onCheckedChange = { viewModel.setWorkflowEnabled(it) })
-        }
-        Spacer(Modifier.height(8.dp))
 
-        if (memories.isEmpty()) {
-            Text(
-                stringResource(R.string.code_workflow_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 28.dp),
-                textAlign = TextAlign.Center,
+            MemorySection(
+                title = stringResource(R.string.code_memory_global),
+                empty = stringResource(R.string.code_memory_global_empty),
+                items = global.map { it.id to "${it.title}：${it.content}" },
+                onDelete = { viewModel.deleteMemory(it) },
+                onClear = { clearingGlobal = true },
+                clearLabel = stringResource(R.string.code_memory_clear_global),
             )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items(memories, key = { it.id }) { memory ->
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                        modifier = Modifier.fillMaxWidth(),
+            MemorySection(
+                title = stringResource(R.string.code_memory_project),
+                empty = stringResource(R.string.code_memory_project_empty),
+                items = notes.map { it.slug to "[[${it.slug}]] ${it.description.ifBlank { it.name }}" },
+                onDelete = null,
+                onClear = { clearingProject = true },
+                clearLabel = stringResource(R.string.code_memory_clear_project),
+            )
+            Spacer(Modifier.height(20.dp))
+        }
+    }
+
+    if (clearingGlobal) {
+        AlertDialog(
+            onDismissRequest = { clearingGlobal = false },
+            title = { Text(stringResource(R.string.code_memory_clear_global)) },
+            text = { Text(stringResource(R.string.code_memory_clear_msg)) },
+            confirmButton = {
+                TextButton(onClick = { clearingGlobal = false; viewModel.clearMemory() }) {
+                    Text(stringResource(R.string.code_action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearingGlobal = false }) { Text(stringResource(R.string.code_cancel)) }
+            },
+        )
+    }
+    if (clearingProject) {
+        AlertDialog(
+            onDismissRequest = { clearingProject = false },
+            title = { Text(stringResource(R.string.code_memory_clear_project)) },
+            text = { Text(stringResource(R.string.code_memory_clear_msg)) },
+            confirmButton = {
+                TextButton(onClick = { clearingProject = false; viewModel.clearDreamNotes() }) {
+                    Text(stringResource(R.string.code_action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearingProject = false }) { Text(stringResource(R.string.code_cancel)) }
+            },
+        )
+    }
+}
+
+/** One titled list of memory entries; a null [onDelete] means the entries are read-only. */
+@Composable
+private fun MemorySection(
+    title: String,
+    empty: String,
+    items: List<Pair<String, String>>,
+    onDelete: ((String) -> Unit)?,
+    onClear: () -> Unit,
+    clearLabel: String,
+) {
+    Spacer(Modifier.height(16.dp))
+    Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    Spacer(Modifier.height(6.dp))
+    if (items.isEmpty()) {
+        Text(
+            empty,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(items, key = { it.first }) { (id, text) ->
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 14.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Row(
-                            modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                memory.content,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f).padding(vertical = 10.dp),
-                            )
-                            IconButton(onClick = { viewModel.deleteWorkflowMemory(memory.id) }) {
+                        Text(
+                            text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f).padding(vertical = 10.dp),
+                        )
+                        if (onDelete != null) {
+                            IconButton(onClick = { onDelete(id) }) {
                                 Icon(
                                     Icons.Outlined.Delete,
                                     stringResource(R.string.code_action_delete),
@@ -486,30 +552,8 @@ fun CodeWorkflowMemorySheet(viewModel: CodeViewModel, onDismiss: () -> Unit) {
                         }
                     }
                 }
-                item {
-                    TextButton(
-                        onClick = { clearing = true },
-                        modifier = Modifier.padding(top = 4.dp),
-                    ) { Text(stringResource(R.string.code_workflow_clear)) }
-                }
             }
         }
-        Spacer(Modifier.height(24.dp))
-    }
-
-    if (clearing) {
-        AlertDialog(
-            onDismissRequest = { clearing = false },
-            title = { Text(stringResource(R.string.code_workflow_clear)) },
-            text = { Text(stringResource(R.string.code_workflow_clear_msg)) },
-            confirmButton = {
-                TextButton(onClick = { clearing = false; viewModel.clearWorkflowMemories() }) {
-                    Text(stringResource(R.string.code_action_delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { clearing = false }) { Text(stringResource(R.string.code_cancel)) }
-            },
-        )
+        TextButton(onClick = onClear, modifier = Modifier.padding(top = 4.dp)) { Text(clearLabel) }
     }
 }

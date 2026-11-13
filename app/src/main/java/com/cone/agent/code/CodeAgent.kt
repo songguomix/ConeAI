@@ -1,6 +1,7 @@
 package com.cone.agent.code
 
 import android.content.Context
+import android.os.Build
 import com.cone.agent.R
 import com.cone.agent.core.LocaleHelper
 import com.cone.agent.data.remote.ChatChunk
@@ -8,9 +9,12 @@ import com.cone.agent.data.remote.LlmClient
 import com.cone.agent.data.remote.WebSearchClient
 import com.cone.agent.data.remote.dto.ChatMessageDto
 import com.cone.agent.data.remote.dto.ContentPart
-import com.cone.agent.data.repository.MemoryWrite
 import com.cone.agent.data.repository.ProviderRepository
 import com.cone.agent.data.repository.SettingsRepository
+import com.cone.agent.memory.DreamRunner
+import com.cone.agent.memory.MemoryScope
+import com.cone.agent.memory.records.MemoryService
+import com.cone.agent.memory.records.RememberOutcome
 import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,11 +46,12 @@ sealed interface CodeEvent {
 }
 
 /**
- * The coding brain behind 「写代码」: an observe → edit → verify loop over one sandboxed project.
+ * The coding brain behind 「写代码」 — a port of ConeCode's agent loop onto the phone workspace.
  *
- * It reuses the app's own provider/model plumbing, so it works with whatever OpenAI- or
- * Anthropic-compatible endpoint the user configured, and — like the rest of ConeAI's tool use — it
- * needs no native function-calling support: the tools travel as tags in ordinary text.
+ * It keeps ConeCode's shape: a JSON action protocol (no native function-calling needed, so any
+ * OpenAI-/Anthropic-/Gemini-compatible endpoint works), a single tool catalog that the system
+ * prompt and the executor both read, and an UNDERSTAND → PLAN → ACT → VERIFY → REVIEW loop that
+ * ends when the model stops issuing actions.
  */
 @Singleton
 class CodeAgent @Inject constructor(
@@ -55,9 +60,10 @@ class CodeAgent @Inject constructor(
     private val providerRepository: ProviderRepository,
     private val settingsRepository: SettingsRepository,
     private val workspace: CodeWorkspace,
-    private val codeMemory: CodeMemoryRepository,
+    private val memoryService: MemoryService,
     private val webSearchClient: WebSearchClient,
     private val httpClient: OkHttpClient,
+    private val dream: DreamRunner,
 ) {
 
     fun run(
@@ -84,9 +90,17 @@ class CodeAgent @Inject constructor(
         // Two memories, deliberately separate. CONE.md belongs to the project and travels with the
         // code; 工作习惯 belongs to the user and follows them into every project they ever start.
         messages += system(
-            systemPrompt(selected.modelId) + instructionsSection(instructions) +
-                codeMemory.promptSection() + planSection(planMode),
+            systemPrompt(selected.modelId, project) + instructionsSection(instructions) +
+                planSection(planMode),
         )
+        // Durable facts and the dream wiki both ride the USER channel: they are quoted data
+        // distilled from past sessions, not operator instructions.
+        val memoryBlock = memoryService.retrieveBlock(task, projectId = null, limit = 6)
+        if (memoryBlock.isNotBlank()) messages += user(memoryBlock)
+        // Dream notes ride the USER channel: they are quoted data distilled from untrusted
+        // sessions, so they must not sit next to the system prompt's authority.
+        val dreamBlock = dream.context(MemoryScope.of(project.id), task)
+        if (dreamBlock.isNotBlank()) messages += user(dreamBlock)
         history.takeLast(MAX_HISTORY_TURNS).forEach { turn ->
             when (turn.role) {
                 CodeRole.USER -> messages += user(turn.text)
@@ -130,8 +144,7 @@ class CodeAgent @Inject constructor(
             val reply = buffer.toString()
             val calls = CodeProtocol.calls(reply)
             if (calls.isEmpty()) {
-                // Plain prose with no tool call is the model's final answer (a question, an
-                // explanation, a refusal) — nothing left to run.
+                // ConeCode's closing rule: a plain-text report with no action block ends the run.
                 emit(CodeEvent.Finished(tokens))
                 return@flow
             }
@@ -140,15 +153,16 @@ class CodeAgent @Inject constructor(
             var stop: CodeEvent? = null
             for (call in calls) {
                 when {
-                    call.tool == "done" -> {
-                        stop = CodeEvent.Finished(tokens)
-                    }
+                    call.tool == "done" -> stop = CodeEvent.Finished(tokens)
                     // A question ends the round: the answer is the user's next message, and the
                     // history carries the question forward so the next run just continues.
-                    call.tool == "ask" -> {
-                        val question = call.content.ifBlank { call.query }.trim()
-                        emit(CodeEvent.Tool(ToolOutcome("ask", question, true, "等待你的回答")))
-                        stop = CodeEvent.Asked(question, tokens)
+                    call.tool == "ask_user" -> {
+                        val question = call.content.ifBlank { call.question }.ifBlank { call.query }.trim()
+                        val shown = if (call.options.isNotEmpty()) {
+                            "$question\n（可选：${call.options.joinToString(" / ")}）"
+                        } else question
+                        emit(CodeEvent.Tool(ToolOutcome("ask_user", question, true, "等待你的回答")))
+                        stop = CodeEvent.Asked(shown, tokens)
                     }
                     call.tool == "plan" -> {
                         emit(CodeEvent.Tool(ToolOutcome("plan", "", true, "等待你确认")))
@@ -161,7 +175,7 @@ class CodeAgent @Inject constructor(
                             call.tool,
                             call.path,
                             false,
-                            "计划模式下不能改文件，请先用 <plan/> 交出计划等用户确认",
+                            "计划模式下不能改文件，请先用 {\"action\": \"plan\"} 交出计划等用户确认",
                         )
                         emit(CodeEvent.Tool(outcome))
                         results.append(feedback(call, outcome)).append("\n\n")
@@ -183,7 +197,7 @@ class CodeAgent @Inject constructor(
                 buildString {
                     append("工具执行结果：\n\n")
                     append(results.toString().trim())
-                    append("\n\n请继续。全部完成后用 <done>一句话总结</done> 结束。")
+                    append("\n\n请继续。全部完成后停止发出动作，直接用纯文本总结改了什么。")
                 },
             )
         }
@@ -233,11 +247,13 @@ class CodeAgent @Inject constructor(
     /* ---------------- tool execution ---------------- */
 
     private suspend fun execute(project: CodeProject, call: ToolCall): ToolOutcome = when (call.tool) {
-        "read" -> read(project, call)
-        "list" -> {
-            val tree = workspace.treeText(project)
-            ToolOutcome("list", project.name, true, "查看项目文件", tree)
-        }
+        "read_file" -> read(project, call)
+        "list_dir" -> workspace.listDir(project, call.path).fold(
+            onSuccess = { listing ->
+                ToolOutcome("list_dir", call.path.ifBlank { project.name }, true, "查看目录", listing)
+            },
+            onFailure = { ToolOutcome("list_dir", call.path, false, it.message.orEmpty()) },
+        )
         "search" -> workspace.search(project, call.query, regex = call.regex).fold(
             onSuccess = { hits ->
                 ToolOutcome(
@@ -260,29 +276,12 @@ class CodeAgent @Inject constructor(
                 detail = paths.joinToString("\n"),
             )
         }
-        "remember" -> remember(call.content.ifBlank { call.query })
-        "todo" -> ToolOutcome(
-            tool = "todo",
-            target = "",
-            ok = true,
-            summary = "${call.content.lines().count { it.isNotBlank() }} 项",
-            detail = call.content,
+        "create_file" -> write(project, call)
+        "edit_file" -> edit(project, call)
+        "create_dir" -> workspace.createDir(project, call.path).fold(
+            onSuccess = { ToolOutcome("create_dir", call.path, true, "已创建目录") },
+            onFailure = { ToolOutcome("create_dir", call.path, false, it.message.orEmpty()) },
         )
-        "web" -> webSearchClient.search(call.query, maxResults = 5).fold(
-            onSuccess = { results ->
-                ToolOutcome(
-                    tool = "web",
-                    target = call.query,
-                    ok = true,
-                    summary = "${results.size} 条结果",
-                    detail = results.joinToString("\n\n") { "${it.title}\n${it.url}\n${it.snippet}" },
-                )
-            },
-            onFailure = { ToolOutcome("web", call.query, false, it.message ?: "搜索失败") },
-        )
-        "fetch" -> fetch(call.query)
-        "write" -> write(project, call)
-        "edit" -> edit(project, call)
         "delete" -> workspace.delete(project, call.path).fold(
             onSuccess = { ToolOutcome("delete", call.path, true, "已删除") },
             onFailure = { ToolOutcome("delete", call.path, false, it.message.orEmpty()) },
@@ -291,7 +290,35 @@ class CodeAgent @Inject constructor(
             onSuccess = { ToolOutcome("rename", "${call.path} → ${call.to}", true, "已重命名") },
             onFailure = { ToolOutcome("rename", call.path, false, it.message.orEmpty()) },
         )
-        else -> ToolOutcome(call.tool, call.path, false, "未知工具：${call.tool}")
+        "copy" -> workspace.copy(project, call.path, call.to).fold(
+            onSuccess = { ToolOutcome("copy", "${call.path} → ${call.to}", true, "已复制") },
+            onFailure = { ToolOutcome("copy", call.path, false, it.message.orEmpty()) },
+        )
+        "download" -> download(project, call)
+        "remember" -> remember(call.content.ifBlank { call.text }.ifBlank { call.query })
+        "memory_search" -> memorySearch(call.query, call.limit)
+        "update_todos" -> ToolOutcome(
+            tool = "update_todos",
+            target = "",
+            ok = true,
+            summary = "${call.todos.size.coerceAtLeast(call.content.lines().count { it.isNotBlank() })} 项",
+            detail = call.content,
+        )
+        "web_search" -> webSearchClient.search(call.query, maxResults = 5).fold(
+            onSuccess = { results ->
+                ToolOutcome(
+                    tool = "web_search",
+                    target = call.query,
+                    ok = true,
+                    summary = "${results.size} 条结果",
+                    detail = results.joinToString("\n\n") { "${it.title}\n${it.url}\n${it.snippet}" },
+                )
+            },
+            onFailure = { ToolOutcome("web_search", call.query, false, it.message ?: "搜索失败") },
+        )
+        "web_fetch" -> fetch(call.url.ifBlank { call.query })
+        "system_info" -> systemInfo(project)
+        else -> ToolOutcome(call.tool, call.path, false, "手机端不支持这个工具：${call.tool}")
     }
 
     /**
@@ -301,38 +328,49 @@ class CodeAgent @Inject constructor(
     private suspend fun remember(text: String): ToolOutcome {
         val fact = text.trim()
         if (fact.isBlank()) return ToolOutcome("remember", "", false, "remember 需要给出要记住的一句话")
-        return when (codeMemory.add(fact)) {
-            MemoryWrite.ADDED -> ToolOutcome("remember", fact, true, "已记住")
-            MemoryWrite.REFINED -> ToolOutcome("remember", fact, true, "已更新")
-            MemoryWrite.DUPLICATE -> ToolOutcome("remember", fact, true, "已经记住过了")
-            MemoryWrite.REJECTED ->
-                ToolOutcome("remember", fact, false, "这条不能存入工作习惯（过长、为空，或含敏感信息）")
+        return when (memoryService.remember(fact)) {
+            RememberOutcome.ADDED -> ToolOutcome("remember", fact, true, "已记住")
+            RememberOutcome.UPDATED -> ToolOutcome("remember", fact, true, "已更新")
+            RememberOutcome.DUPLICATE -> ToolOutcome("remember", fact, true, "已经记住过了")
+            RememberOutcome.REJECTED ->
+                ToolOutcome("remember", fact, false, "这条不能存入长期记忆（过短、为空，或含敏感信息）")
         }
+    }
+
+    private suspend fun memorySearch(query: String, limit: Int): ToolOutcome {
+        val hits = memoryService.relevant(query, projectId = null, limit = (if (limit > 0) limit else 5).coerceIn(1, 10))
+        return ToolOutcome(
+            tool = "memory_search",
+            target = query,
+            ok = true,
+            summary = if (hits.isEmpty()) "没有匹配" else "${hits.size} 条",
+            detail = hits.joinToString("\n") { "- ${it.title}：${it.content}" },
+        )
     }
 
     private suspend fun read(project: CodeProject, call: ToolCall): ToolOutcome =
         workspace.read(project, call.path).fold(
             onSuccess = { text ->
                 ToolOutcome(
-                    tool = "read",
+                    tool = "read_file",
                     target = call.path,
                     ok = true,
                     summary = "${text.lines().size} 行",
                     detail = text.take(MAX_DETAIL_CHARS),
                 )
             },
-            onFailure = { ToolOutcome("read", call.path, false, it.message.orEmpty()) },
+            onFailure = { ToolOutcome("read_file", call.path, false, it.message.orEmpty()) },
         )
 
     private suspend fun write(project: CodeProject, call: ToolCall): ToolOutcome {
-        if (call.path.isBlank()) return ToolOutcome("write", "", false, "缺少 path 属性")
+        if (call.path.isBlank()) return ToolOutcome("create_file", "", false, "缺少 path")
         val existed = workspace.exists(project, call.path)
         val before = if (existed) workspace.read(project, call.path).getOrDefault("") else ""
         return workspace.write(project, call.path, call.content).fold(
             onSuccess = {
                 val (added, removed) = CodeDiff.stats(before, call.content)
                 ToolOutcome(
-                    tool = "write",
+                    tool = "create_file",
                     target = call.path,
                     ok = true,
                     summary = if (existed) "已覆盖" else "已新建",
@@ -341,12 +379,13 @@ class CodeAgent @Inject constructor(
                     diff = CodeDiff.compute(before, call.content),
                 )
             },
-            onFailure = { ToolOutcome("write", call.path, false, it.message.orEmpty()) },
+            onFailure = { ToolOutcome("create_file", call.path, false, it.message.orEmpty()) },
         )
     }
 
     /**
-     * Literal, unique string replacements applied in order.
+     * Literal, unique string replacements applied in order; `content` (whole rewrite) is the
+     * fallback ConeCode's edit_file offers when a precise match is impractical.
      *
      * Both guards matter: a match that appears twice would let the model silently patch the wrong
      * occurrence, and a match that appears zero times usually means the model is editing against a
@@ -354,32 +393,55 @@ class CodeAgent @Inject constructor(
      * applied in memory first, so a bad pair later in the list cannot leave the file half-edited.
      */
     private suspend fun edit(project: CodeProject, call: ToolCall): ToolOutcome {
+        if (call.path.isBlank()) return ToolOutcome("edit_file", "", false, "缺少 path")
         val before = workspace.read(project, call.path).getOrElse {
-            return ToolOutcome("edit", call.path, false, it.message.orEmpty())
+            return ToolOutcome("edit_file", call.path, false, it.message.orEmpty())
         }
-        if (call.edits.isEmpty() || call.edits.all { it.first.isEmpty() }) {
-            return ToolOutcome("edit", call.path, false, "<old> 为空；整文件替换请改用 write")
+        if (call.edits.isEmpty()) {
+            if (call.content.isBlank()) {
+                return ToolOutcome("edit_file", call.path, false, "edit_file 需要 old/new 或 content")
+            }
+            return workspace.write(project, call.path, call.content).fold(
+                onSuccess = {
+                    val (added, removed) = CodeDiff.stats(before, call.content)
+                    ToolOutcome(
+                        tool = "edit_file",
+                        target = call.path,
+                        ok = true,
+                        summary = "已整体重写",
+                        added = added,
+                        removed = removed,
+                        diff = CodeDiff.compute(before, call.content),
+                    )
+                },
+                onFailure = { ToolOutcome("edit_file", call.path, false, it.message.orEmpty()) },
+            )
         }
         var after = before
         call.edits.forEachIndexed { index, (old, new) ->
             val label = if (call.edits.size > 1) "第 ${index + 1} 处：" else ""
             if (old.isEmpty()) {
-                return ToolOutcome("edit", call.path, false, "$label<old> 为空")
+                return ToolOutcome("edit_file", call.path, false, "$label old 为空")
             }
             val occurrences = after.split(old).size - 1
             if (occurrences == 0) {
-                return ToolOutcome("edit", call.path, false, "${label}文件中找不到 <old> 的内容，请先 read 再改")
+                return ToolOutcome("edit_file", call.path, false, "${label}文件中找不到 old 的内容，请先 read_file 再改")
             }
-            if (occurrences > 1) {
-                return ToolOutcome("edit", call.path, false, "$label<old> 出现了 $occurrences 次，请提供更长、唯一的片段")
+            if (occurrences > 1 && !call.replaceAll) {
+                return ToolOutcome(
+                    "edit_file",
+                    call.path,
+                    false,
+                    "$label old 出现了 $occurrences 次，请提供更长、唯一的片段，或加 replaceAll=true",
+                )
             }
-            after = after.replace(old, new)
+            after = if (call.replaceAll) after.replace(old, new) else after.replaceFirst(old, new)
         }
         return workspace.write(project, call.path, after).fold(
             onSuccess = {
                 val (added, removed) = CodeDiff.stats(before, after)
                 ToolOutcome(
-                    tool = "edit",
+                    tool = "edit_file",
                     target = call.path,
                     ok = true,
                     summary = if (call.edits.size > 1) "已修改 ${call.edits.size} 处" else "已修改",
@@ -388,8 +450,40 @@ class CodeAgent @Inject constructor(
                     diff = CodeDiff.compute(before, after),
                 )
             },
-            onFailure = { ToolOutcome("edit", call.path, false, it.message.orEmpty()) },
+            onFailure = { ToolOutcome("edit_file", call.path, false, it.message.orEmpty()) },
         )
+    }
+
+    /**
+     * Downloads a URL straight into the project. ConeCode has the same tool for fetching a library
+     * or asset the user asked for; on a phone this is the only way to bring a binary into the
+     * sandbox without a terminal.
+     */
+    private suspend fun download(project: CodeProject, call: ToolCall): ToolOutcome {
+        val url = call.url.ifBlank { call.query }.trim()
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            return ToolOutcome("download", url, false, "只支持 http(s) 链接")
+        }
+        val path = call.path.ifBlank { url.substringAfterLast('/').substringBefore('?').ifBlank { "download.bin" } }
+        return runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val request = Request.Builder().url(url).header("User-Agent", FETCH_UA).build()
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) error("HTTP ${response.code}")
+                    val bytes = response.body?.bytes() ?: error("空响应")
+                    val text = bytes.toString(Charsets.UTF_8)
+                    val target = if (text.any { it == '\u0000' } || text.count { it.isISOControl() && it != '\n' && it != '\r' && it != '\t' } > 8) {
+                        // Binary payload: keep the bytes on disk, report the size only.
+                        workspace.writeBytes(project, path, bytes).getOrThrow()
+                        ToolOutcome("download", "$url → $path", true, "已下载 ${bytes.size} 字节")
+                    } else {
+                        workspace.write(project, path, text).getOrThrow()
+                        ToolOutcome("download", "$url → $path", true, "已下载 ${bytes.size} 字节")
+                    }
+                    target
+                }
+            }
+        }.getOrElse { ToolOutcome("download", url, false, it.message ?: "下载失败") }
     }
 
     /**
@@ -400,7 +494,7 @@ class CodeAgent @Inject constructor(
     private suspend fun fetch(url: String): ToolOutcome {
         val clean = url.trim()
         if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
-            return ToolOutcome("fetch", clean, false, "只支持 http(s) 链接")
+            return ToolOutcome("web_fetch", clean, false, "只支持 http(s) 链接")
         }
         return runCatching {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -416,7 +510,7 @@ class CodeAgent @Inject constructor(
                         .replace(Regex("\\n\\s*\\n+"), "\n\n")
                         .trim()
                     ToolOutcome(
-                        tool = "fetch",
+                        tool = "web_fetch",
                         target = clean,
                         ok = true,
                         summary = "${text.length} 字",
@@ -424,18 +518,30 @@ class CodeAgent @Inject constructor(
                     )
                 }
             }
-        }.getOrElse { ToolOutcome("fetch", clean, false, it.message ?: "抓取失败") }
+        }.getOrElse { ToolOutcome("web_fetch", clean, false, it.message ?: "抓取失败") }
     }
 
-    /** The extra rules that turn a run into a planning pass. Empty when plan mode is off. */
-    /** The extra rules that turn a run into a planning pass. Empty when plan mode is off. */
+    /** Device + workspace facts, so the model stops guessing what it is running on. */
+    private fun systemInfo(project: CodeProject): ToolOutcome {
+        val detail = buildString {
+            appendLine("平台：Android ${Build.VERSION.RELEASE}（API ${Build.VERSION.SDK_INT}）")
+            appendLine("设备：${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("项目：${project.name}")
+            appendLine("项目根目录：${project.name}/（沙盒，路径相对它）")
+            appendLine("文件数：${project.fileCount}")
+            append("终端：不可用（手机端没有 shell、编译器与包管理器）")
+        }
+        return ToolOutcome("system_info", project.name, true, "设备信息", detail)
+    }
+
+    /* ---------------- prompts ---------------- */
+
     private fun planSection(planMode: Boolean): String {
         if (!planMode) return ""
-        return "\n\n【计划模式】本轮只出计划，一个文件都不要改。" +
-            "可以用 <list/>、<read/>、<search/>、<glob/> 把现状看清楚；" +
-            "write / edit / delete / rename 本轮一律不可用，调了也会被拒绝。" +
-            "用 <todo> 写出你打算怎么做（每行一步），再用一两句说明关键取舍和你做的假设，" +
-            "最后用 <plan/> 结束等用户确认。用户点「开始执行」后，你会拿到同样的上下文重跑一遍，那时才动手。"
+        return "\n\n【计划模式（只读）】本轮只出计划，一个文件都不要改：create_file / edit_file / create_dir / delete / rename / copy / download 一律不可用，调了也会被拒绝。" +
+            "可以先用只读工具把现状看清楚，再用 update_todos 列出步骤、用一两句说明关键取舍与假设，" +
+            "最后用 {\"action\": \"plan\", \"plan\": \"计划全文\"} 交出完整计划等待用户批准。" +
+            "用户点「开始执行」后，你会拿到同样的上下文重跑一遍，那时才动手。"
     }
 
     private fun instructionsSection(instructions: String): String {
@@ -444,28 +550,85 @@ class CodeAgent @Inject constructor(
             instructions.take(MAX_INSTRUCTIONS_CHARS)
     }
 
-    /* ---------------- prompts ---------------- */
+    private fun toolsSection(): String = buildString {
+        append("【工具】用 ```json 围栏块调用工具，每块一个 JSON 对象，按出现顺序执行。需要并行时，在同一条回复里连续写多个块：\n")
+        append("```json\n{\"action\": \"read_file\", \"path\": \"index.html\"}\n```\n\n")
+        append("工具目录（action — 说明 / 示例）：\n")
+        TOOL_SPECS.forEachIndexed { index, spec ->
+            append("${index + 1}. ${spec.name} — ${spec.desc}\n   ${spec.example}\n")
+        }
+    }
+
+    /**
+     * The coding agent's standing instructions — ConeCode's core prompt, adapted to the phone.
+     *
+     * Sent on every round, so length is a running cost — but the expensive failure is not a long
+     * prompt, it is a run that produces a blank page. The VERIFY step exists because this agent
+     * cannot execute anything: nothing will tell it that the `<script src>` it wrote points at a
+     * file it never created, so it has to check that itself before claiming to be done.
+     */
+    private fun systemPrompt(modelId: String, project: CodeProject) = buildString {
+        append("你是 ConeCode 编程智能体，ConeAI 手机端的「写代码」工作台。你在一个沙盒项目目录里，直接读写文件完成编码任务。\n\n")
+        append("【身份】被问「你是谁 / 什么模型」时如实回答：你是 ConeAI 的 ConeCode 编程智能体，当前模型为 $modelId。不要谎称自己是 Claude、ChatGPT 或 Gemini。\n\n")
+        append("【工作流】按以下顺序工作；除紧急修复外不要跳步：\n")
+        append("1. UNDERSTAND — 先读相关代码、约定、类型与库，确认文件、符号和 API 的存在与形状，形成有依据的判断再动手。\n")
+        append("2. PLAN — 任务需要两步以上时，用 update_todos 建立简短有序的清单，并随进度保持更新（同时只有一项 in_progress）。\n")
+        append("3. ACT & ORCHESTRATE — 做最小而完整的修改：匹配现有风格，保留无关改动，优先精确替换（edit_file）而不是整文件重写；注释说明「为什么」，不复述改动。\n")
+        append("4. VERIFY — 改动后必须证明它能运行。本环境没有终端与编译器，无法执行代码，所以逐条静态核对：引用到的文件是否存在、id/class 是否对应、函数与变量是否都有定义、改动是否波及调用处。不确定就 read_file 回读。绝不要声称「已测试通过」。\n")
+        append("5. REVIEW FROM THE TOP — 重新读原始需求，对照当前代码逐条检查，并把改过的文件从头读一遍；发现缺口就修好重来，直到没有问题才报告完成。\n\n")
+        append(toolsSection())
+        append("\n【规则】\n")
+        append("- 路径一律相对项目根目录（如 src/app.js）；不写绝对路径，不用 .. 越出项目。\n")
+        append("- 手机上没有终端、编译器、包管理器：不能运行、编译、安装依赖，也不要假装运行过或声称「已测试通过」。\n")
+        append("- 网页是唯一能当场跑起来的类型：应用内用 file:// 直接打开 index.html。不要用需要构建的技术（JSX、TypeScript、Sass、打包器），不要引 CDN 外链——用户可能没网，一断链页面就废。CSS/JS 写成同目录的本地文件，或直接内联进 HTML。\n")
+        append("- 网页按手机屏来做：带 viewport meta，可点区域不小于 44px，布局用 flex/grid 自适应，不要写死像素宽度。\n")
+        append("- create_file / edit_file 的 content 必须是完整文件内容，禁止「…省略…」「其余保持不变」这类占位符。\n")
+        append("- edit_file 的 old 必须与文件逐字一致（含缩进）且在文件中唯一；不唯一就多带几行上下文，或加 replaceAll=true。\n")
+        append("- 代码要能直接用：该有的导入、错误处理、边界情况都写上，不留半成品、不留 TODO 注释。\n")
+        append("- 并行规则：只读且相互独立的工具（read_file / list_dir / search / glob / memory_search / web_search / web_fetch / system_info）放在同一条回复的多个 json 块里一起执行；写入操作按依赖顺序逐个执行。\n")
+        append("- 收尾规则：全部完成后停止发出动作，直接用一段纯文本 Markdown 总结（不要再输出 json 块）。没有动作就表示本轮结束。\n")
+        append("- 一轮里最多用一个终结动作（ask_user / plan），用完不要再跟其它工具；最多 $MAX_ROUNDS 轮，高效推进，同一个文件不要反复读。\n\n")
+        append("【提问】需求有歧义、或不同做法会明显改变结果时，先 ask_user 再动手，一次只问一个，把选项写清楚。\n")
+        append("- 该问：「待办刷新后还留着（存 localStorage）还是刷新就清空？」\n")
+        append("- 不该问：自己能合理决定的小事（变量名、配色、缩进）；以及问了只会得到「你看着办」的问题。\n")
+        append("用户已经说清楚的不要反问；含糊但有明显合理默认值的，按默认做并在回答里说明你的假设。\n\n")
+        append("【记忆】用户提出一条以后还要照办的要求时，只写一个地方：\n")
+        append("- 换个新项目就不成立的 → 写进 ${workspace.instructionsName()}（先 read_file 再 create_file 回补充后的完整内容）。\n")
+        append("  例：「本项目用 Vue 3」「接口放 api/ 目录」「这次先不做登录」\n")
+        append("- 换个新项目照样成立的 → remember 记一条，它在用户以后每个项目里都生效。\n")
+        append("  例：「偏好原生 JS，不用框架」「注释写中文」「缩进用两个空格」\n")
+        append("判断只问一句：把这句话原样搬到用户下一个全新项目里，还成立吗？\n")
+        append("注意：用户拒绝某个具体做法（「这里别用框架」）不等于他一贯讨厌它，除非他说了「以后都」「我一向」「所有项目」这类话，否则不要升级成长期习惯。\n")
+        append("remember 每条 30 字以内、一次只记一条、【工作习惯】里已有的不重复记、绝不记密码密钥令牌。\n\n")
+        append("【表达】围栏块之外的文字是给用户看的：说清你在做什么、为什么这么选，一两句就够。不要复述代码内容，不要写「好的，我将为您…」这类开场白。\n\n")
+        append("【运行环境】Android 手机沙盒项目目录（本次项目「${project.name}」）；日期：$today；模型：$modelId。")
+    }.trim() + "\n" + LocaleHelper.string(context, R.string.output_language_directive)
 
     private fun feedback(call: ToolCall, outcome: ToolOutcome): String {
         if (!outcome.ok) return "[${call.tool} ${outcome.target}] 失败：${outcome.summary}"
         return when (call.tool) {
-            "read" -> buildString {
-                append("[read ${call.path}] ${outcome.summary}\n")
+            "read_file" -> buildString {
+                append("[read_file ${call.path}] ${outcome.summary}\n")
                 append(numbered(outcome.detail))
             }
-            "list" -> "[list] 当前文件：\n${outcome.detail}"
+            "list_dir" -> "[list_dir ${call.path}] 当前文件：\n${outcome.detail}"
             "search" -> "[search ${call.query}] ${outcome.summary}\n${outcome.detail.take(MAX_FEED_CHARS)}"
             "glob" -> "[glob ${call.query}] ${outcome.summary}\n${outcome.detail.take(MAX_FEED_CHARS)}"
             "remember" -> "[remember] ${outcome.summary}：${outcome.target}"
-            "ask" -> "[ask] 已向用户提问，等待回答"
+            "memory_search" -> "[memory_search ${call.query}] ${outcome.summary}\n${outcome.detail}"
+            "ask_user" -> "[ask_user] 已向用户提问，等待回答"
             "plan" -> "[plan] 计划已交给用户确认"
-            "todo" -> "[todo] 任务清单已更新，界面已展示给用户"
-            "web" -> "[web ${call.query}] ${outcome.summary}\n${outcome.detail.take(MAX_FEED_CHARS)}"
-            "fetch" -> "[fetch ${call.query}] ${outcome.summary}\n${outcome.detail.take(MAX_FEED_CHARS)}"
-            "write" -> "[write ${call.path}] ${outcome.summary}（+${outcome.added} −${outcome.removed}）"
-            "edit" -> "[edit ${call.path}] 已修改（+${outcome.added} −${outcome.removed}）"
+            "update_todos" -> "[update_todos] 任务清单已更新，界面已展示给用户"
+            "web_search" -> "[web_search ${call.query}] ${outcome.summary}\n${outcome.detail.take(MAX_FEED_CHARS)}"
+            "web_fetch" -> "[web_fetch ${call.query}] ${outcome.summary}\n${outcome.detail.take(MAX_FEED_CHARS)}"
+            "create_file" -> "[create_file ${call.path}] ${outcome.summary}（+${outcome.added} −${outcome.removed}）"
+            "edit_file" -> "[edit_file ${call.path}] ${outcome.summary}（+${outcome.added} −${outcome.removed}）"
+            "create_dir" -> "[create_dir ${call.path}] 已创建目录"
             "delete" -> "[delete ${call.path}] 已删除"
             "rename" -> "[rename ${outcome.target}] 已重命名"
+            "copy" -> "[copy ${outcome.target}] 已复制"
+            "download" -> "[download ${outcome.target}] ${outcome.summary}"
+            "system_info" -> "[system_info]\n${outcome.detail}"
             else -> "[${call.tool}] ${outcome.summary}"
         }
     }
@@ -477,99 +640,14 @@ class CodeAgent @Inject constructor(
     /**
      * Replays of earlier turns keep the model's reasoning but drop the file bodies it already wrote:
      * a couple of full-file writes would otherwise dominate the context window within three rounds,
-     * and the current state of any file is one `read` away.
+     * and the current state of any file is one `read_file` away.
      */
     private fun compact(text: String): String =
-        Regex("(<write\\b[^>]*>)([\\s\\S]*?)(</write>)").replace(text) { m ->
-            if (m.groupValues[2].length <= COMPACT_KEEP_CHARS) {
-                m.value
-            } else {
-                "${m.groupValues[1]}（内容已写入文件，此处省略 ${m.groupValues[2].length} 字符）${m.groupValues[3]}"
-            }
+        Regex("(```json\\s*\\{\\s*\"action\"\\s*:\\s*\"create_file\"[\\s\\S]*?)(```)").replace(text) { m ->
+            val block = m.groupValues[1]
+            if (block.length <= COMPACT_KEEP_CHARS) m.value
+            else block.take(COMPACT_KEEP_CHARS) + "…（文件内容已写入，此处省略 ${block.length - COMPACT_KEEP_CHARS} 字符）" + m.groupValues[2]
         }
-
-    /**
-     * The coding agent's standing instructions.
-     *
-     * Sent on every round, so length is a running cost — but the expensive failure is not a long
-     * prompt, it is a run that produces a blank page. The 自查 step exists because this agent cannot
-     * execute anything: nothing will tell it that the `<script src>` it wrote points at a file it
-     * never created, so it has to check that itself before claiming to be done.
-     */
-    private fun systemPrompt(modelId: String) =
-        """
-你是 ConeAI 代码助手，运行在用户的 Android 手机上，底层模型是用户自行接入的 "$modelId"。你在一个沙盒项目目录里直接读写文件完成编码任务。
-
-【身份】被问「你是谁 / 什么模型」时如实回答：你是 ConeAI，当前模型为 $modelId。不要谎称自己是 Claude、ChatGPT 或 Gemini。
-
-【环境】
-- 路径一律相对项目根目录（如 src/app.js）；不写绝对路径，不用 .. 越出项目。
-- 手机上没有终端、编译器、包管理器：你不能运行、编译、安装依赖，也绝不要假装运行过或声称「已测试通过」。
-- 网页是唯一能当场跑起来的类型：应用内用 file:// 直接打开 index.html。所以不要用需要构建的技术（JSX、TypeScript、Sass、打包器），也不要引 CDN 外链——用户可能没网，一断链页面就废。CSS/JS 写成同目录的本地文件，或直接内联进 HTML。
-
-【工具】用下面的标签调用工具。标签必须顶格独立出现，前后不要包裹 ``` 代码块：
-<list/>                                查看项目全部文件
-<read path="app.js"/>                  读取文件（会带行号返回）
-<search q="TODO"/>                     全项目搜索文本；加 re="1" 表示 q 是正则
-<glob pattern="src/**/*.js"/>          按通配符列出文件（** 跨目录，* 不跨）
-<write path="app.js">完整文件内容</write>   新建或整体覆盖一个文件
-<edit path="app.js"><old>原文片段</old><new>新片段</new></edit>   精确替换文件里的一段文本
-<delete path="tmp.js"/>                删除文件或目录
-<rename path="a.js" to="b.js"/>        重命名 / 移动
-<todo>任务清单</todo>                    更新任务清单，直接展示给用户看
-<web q="css grid 用法"/>                联网搜索（拿不准的 API、库用法可以查）
-<fetch url="https://..."/>             抓取网页正文
-<remember>用户的长期工作习惯</remember>     记住用户跨项目一贯的偏好
-<ask>要问用户的问题</ask>                 需求不明确时提问，会停下等回答
-<plan/>                                计划模式下交出计划，等用户确认
-<done>一句话总结你做了什么</done>          任务完成，结束本轮
-
-【一个任务怎么走】
-1. 先看再动：不清楚项目里有什么就 <list/>，要改的文件先 <read/>。绝不修改没读过的文件。
-2. 三步以上的任务先用 <todo> 列清单，之后每完成一步重新输出整份清单并更新勾选。一两步的小事不用列：
-<todo>
-- [x] 读现有代码
-- [>] 写 index.html
-- [ ] 加交互逻辑
-</todo>
-   [ ] 待办、[>] 正在做（同时最多一项）、[x] 已完成。
-3. 动手：新建或整体重写用 <write>，局部修改用 <edit>。
-4. **收尾自查**——你跑不了代码，这一步就是你唯一的测试。宣布完成前逐条核对刚写的内容：
-   - HTML 里每个 src / href 指向的文件，是否都真的创建了？
-   - JS 里 getElementById / querySelector 用到的 id、class，是否在 HTML 里真的存在？拼写一致吗？
-   - 调用到的函数和变量是否都有定义？事件监听是否真的绑上了？
-   - 改动是否波及别的文件（改了函数名，调用处跟着改了吗）？
-   记不清就 <read/> 回读确认，不要凭印象。用户点开预览是白屏，绝大多数就是漏了这一步。
-5. 用 <done> 收尾，一句话说明改了什么。
-
-【写代码的硬要求】
-- <write> 必须是**完整**的文件内容，禁止「…省略…」「其余保持不变」这类占位符——你写什么，文件里就只剩什么。
-- <edit> 的 <old> 必须与文件逐字一致（含缩进）且在文件中唯一；不唯一就多带几行上下文。一次 <edit> 可以放多组 <old>/<new>，按顺序执行，任何一组匹配失败则整次不生效。
-- 代码要能直接用：该有的导入、错误处理、边界情况都写上，不留半成品、不留 TODO 注释。
-- 网页按手机屏来做：带 viewport meta，可点区域不小于 44px，布局用 flex/grid 自适应，不要写死像素宽度。
-
-【本轮怎么结束】三选一，一轮里只用一个，用完不要再跟其它工具：
-- <done>  —— 做完了
-- <ask>   —— 需要用户拿主意
-- <plan/> —— 计划模式下交出计划
-最多 $MAX_ROUNDS 轮，高效推进：同一个文件不要反复读，一次能连着调用多个工具就不要拆成多轮。
-
-【提问】需求有歧义、或不同做法会明显改变结果时，先 <ask> 再动手，一次只问一个，把选项写清楚。
-- 该问：「待办刷新后还留着（存 localStorage）还是刷新就清空？」
-- 不该问：自己能合理决定的小事（变量名、配色、缩进）；以及问了只会得到「你看着办」的问题。
-用户已经说清楚的不要反问；含糊但有明显合理默认值的，按默认做并在回答里说明你的假设。
-
-【记忆】用户提出一条以后还要照办的要求时，**只写一个地方**：
-- 换个新项目就不成立的 → 写进 ${workspace.instructionsName()}（先 <read/> 再 <write> 回补充后的完整内容）。
-  例：「本项目用 Vue 3」「接口放 api/ 目录」「这次先不做登录」
-- 换个新项目照样成立的 → <remember> 记一条，它在用户以后每个项目里都生效。
-  例：「偏好原生 JS，不用框架」「注释写中文」「缩进用两个空格」
-判断只问一句：把这句话原样搬到用户下一个全新项目里，还成立吗？
-注意：用户拒绝某个具体做法（「这里别用框架」）不等于他一贯讨厌它，除非他说了「以后都」「我一向」「所有项目」这类话，否则不要升级成长期习惯。
-<remember> 每条 30 字以内、一次只记一条、【工作习惯】里已有的不重复记、绝不记密码密钥令牌。
-
-【表达】标签之外的文字是给用户看的：说清你在做什么、为什么这么选，一两句就够。不要复述代码内容，不要写「好的，我将为您…」这类开场白。
-""".trim() + "\n" + LocaleHelper.string(context, R.string.output_language_directive)
 
     private fun system(text: String) = ChatMessageDto("system", listOf(ContentPart.text(text)))
     private fun user(text: String) = ChatMessageDto("user", listOf(ContentPart.text(text)))
@@ -581,11 +659,39 @@ class CodeAgent @Inject constructor(
         else -> a + b
     }
 
+    private val today: String
+        get() = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+    private data class ToolSpec(val name: String, val desc: String, val example: String)
+
     private companion object {
         /** Tools that change the project; blocked while a plan is still awaiting approval. */
-        val MUTATING_TOOLS = setOf("write", "edit", "delete", "rename")
+        val MUTATING_TOOLS = setOf("create_file", "edit_file", "create_dir", "delete", "rename", "copy", "download")
 
-        const val MAX_ROUNDS = 12
+        /** ConeCode's tool catalog, trimmed to what a phone sandbox can actually serve. */
+        val TOOL_SPECS = listOf(
+            ToolSpec("read_file", "读取项目文件全文（带行号）。", """{"action": "read_file", "path": "src/main.js"}"""),
+            ToolSpec("list_dir", "列出项目目录树；path 为空时列出整个项目。", """{"action": "list_dir", "path": "src"}"""),
+            ToolSpec("search", "全项目搜索文本；isRegex=true 时 query 按正则处理。", """{"action": "search", "query": "TODO"}"""),
+            ToolSpec("glob", "按通配符列出文件（** 跨目录，* 不跨）。", """{"action": "glob", "pattern": "src/**/*.js"}"""),
+            ToolSpec("create_file", "新建或整体覆盖文件，content 必须是完整内容。", """{"action": "create_file", "path": "app.js", "content": "完整文件内容"}"""),
+            ToolSpec("edit_file", "精确替换：old 必须逐字出现且唯一；也可用 content 整体重写。", """{"action": "edit_file", "path": "app.js", "old": "旧片段", "new": "新片段"}"""),
+            ToolSpec("create_dir", "新建目录（含父目录）。", """{"action": "create_dir", "path": "assets/img"}"""),
+            ToolSpec("delete", "删除文件或目录。", """{"action": "delete", "path": "tmp.js"}"""),
+            ToolSpec("rename", "重命名 / 移动文件或目录。", """{"action": "rename", "oldPath": "a.js", "newPath": "b.js"}"""),
+            ToolSpec("copy", "复制文件或目录。", """{"action": "copy", "srcPath": "a.js", "destPath": "b.js"}"""),
+            ToolSpec("download", "下载 URL 到项目文件。", """{"action": "download", "url": "https://example.com/x.js", "path": "vendor/x.js"}"""),
+            ToolSpec("web_search", "联网搜索（拿不准的 API、库用法可以查）。", """{"action": "web_search", "query": "css grid 用法"}"""),
+            ToolSpec("web_fetch", "抓取网页正文。", """{"action": "web_fetch", "url": "https://developer.mozilla.org/"}"""),
+            ToolSpec("remember", "记住一条跨项目的长期工作习惯。", """{"action": "remember", "text": "注释写中文"}"""),
+            ToolSpec("memory_search", "搜索长期记忆（全局事实与工作习惯）。", """{"action": "memory_search", "query": "注释"}"""),
+            ToolSpec("update_todos", "更新可见任务清单；status 取 pending / in_progress / completed。", """{"action": "update_todos", "todos": [{"content": "读现有代码", "status": "completed"}, {"content": "写 index.html", "status": "in_progress"}]}"""),
+            ToolSpec("ask_user", "需求有歧义或需要用户拍板时提问，一次只问一个。", """{"action": "ask_user", "question": "刷新后数据保留吗？", "options": ["保留（localStorage）", "清空"]}"""),
+            ToolSpec("system_info", "查看设备与运行环境。", """{"action": "system_info"}"""),
+            ToolSpec("plan", "计划模式下交出计划，等待用户批准。", """{"action": "plan", "plan": "计划全文"}"""),
+        )
+
+        const val MAX_ROUNDS = 24
         const val MAX_TOKENS = 8000
         const val TEMPERATURE = 0.2
         const val MAX_HISTORY_TURNS = 12

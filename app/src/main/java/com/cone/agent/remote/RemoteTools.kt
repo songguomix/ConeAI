@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -110,7 +112,7 @@ internal fun FileBrowser(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(stringResource(R.string.remote_no_folder), color = cx.muted, fontSize = 14.sp)
+                Text(stringResource(R.string.remote_no_folder), color = cx.muted, style = RemoteType.bodyLarge)
                 Spacer(Modifier.size(16.dp))
                 Box(
                     modifier = Modifier
@@ -119,7 +121,7 @@ internal fun FileBrowser(
                         .clickable { scope.launch { viewModel.openFolder(null)?.let { cwd = it } } }
                         .padding(horizontal = 18.dp, vertical = 11.dp),
                 ) {
-                    Text(stringResource(R.string.remote_open_folder), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.remote_open_folder), color = Color.White, style = RemoteType.bodyLarge, fontWeight = FontWeight.SemiBold)
                 }
             }
             return
@@ -146,7 +148,7 @@ internal fun FileBrowser(
             Text(
                 cwd!!,
                 color = cx.muted,
-                fontSize = 12.sp,
+                style = RemoteType.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -155,7 +157,7 @@ internal fun FileBrowser(
             Text(
                 stringResource(R.string.remote_set_root),
                 color = cx.accent,
-                fontSize = 12.sp,
+                style = RemoteType.bodySmall,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .clickable { scope.launch { viewModel.openFolder(cwd) } }
@@ -170,7 +172,7 @@ internal fun FileBrowser(
             }
         } else if (entries.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.remote_empty_dir), color = cx.muted, fontSize = 13.sp)
+                Text(stringResource(R.string.remote_empty_dir), color = cx.muted, style = RemoteType.body)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -198,7 +200,7 @@ internal fun FileBrowser(
                         Text(
                             entry.name,
                             color = if (entry.isDirectory) cx.text else cx.muted,
-                            fontSize = 13.sp,
+                            style = RemoteType.body,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
@@ -252,7 +254,7 @@ internal fun FileViewer(viewModel: RemoteViewModel, path: String, onBack: () -> 
             Text(
                 baseName(path),
                 color = cx.text,
-                fontSize = 14.sp,
+                style = RemoteType.bodyLarge,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -275,7 +277,7 @@ internal fun FileViewer(viewModel: RemoteViewModel, path: String, onBack: () -> 
             }
         }
         statusRes?.let {
-            Text(stringResource(it), color = cx.accent, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp))
+            Text(stringResource(it), color = cx.accent, style = RemoteType.bodySmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp))
         }
         HorizontalDivider(color = cx.border)
 
@@ -284,18 +286,22 @@ internal fun FileViewer(viewModel: RemoteViewModel, path: String, onBack: () -> 
                 CircularProgressIndicator(strokeWidth = 2.dp, color = cx.accent, modifier = Modifier.size(22.dp))
             }
             content == null -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.remote_cant_open), color = cx.muted, fontSize = 13.sp)
+                Text(stringResource(R.string.remote_cant_open), color = cx.muted, style = RemoteType.body)
             }
-            editing -> BasicTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                textStyle = TextStyle(color = cx.text, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp),
-                cursorBrush = SolidColor(cx.accent),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(12.dp),
-            )
+            editing -> BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val editorMinHeight = maxHeight
+                // Keep scrolling on the parent: putting it on BasicTextField masks the editor's
+                // accessibility role as ScrollView and makes it hard to focus with assistive tools.
+                Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    BasicTextField(
+                        value = draft,
+                        onValueChange = { draft = it },
+                        textStyle = RemoteType.monoBody.copy(color = cx.text),
+                        cursorBrush = SolidColor(cx.accent),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = editorMinHeight).padding(12.dp),
+                    )
+                }
+            }
             else -> SelectionContainer(
                 modifier = Modifier
                     .fillMaxSize()
@@ -303,7 +309,7 @@ internal fun FileViewer(viewModel: RemoteViewModel, path: String, onBack: () -> 
                     .horizontalScroll(rememberScrollState())
                     .padding(12.dp),
             ) {
-                Text(content!!, color = cx.text, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp, softWrap = false)
+                Text(content!!, color = cx.text, style = RemoteType.monoBody, softWrap = false)
             }
         }
     }
@@ -321,7 +327,7 @@ private fun HeaderAction(icon: androidx.compose.ui.graphics.vector.ImageVector, 
     ) {
         Icon(icon, contentDescription = null, tint = if (enabled) cx.accent else cx.faint, modifier = Modifier.size(16.dp))
         Spacer(Modifier.size(5.dp))
-        Text(label, color = if (enabled) cx.accent else cx.faint, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = if (enabled) cx.accent else cx.faint, style = RemoteType.body, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -452,7 +458,7 @@ internal fun TerminalView(
             Text(
                 session.cwd ?: "—",
                 color = cx.faint,
-                fontSize = 11.sp,
+                style = RemoteType.caption,
                 fontFamily = FontFamily.Monospace,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -464,7 +470,7 @@ internal fun TerminalView(
                 Text(
                     stringResource(R.string.remote_term_running, elapsed),
                     color = cx.accent,
-                    fontSize = 10.5.sp,
+                    style = RemoteType.tiny,
                     fontFamily = FontFamily.Monospace,
                 )
             }
@@ -481,7 +487,7 @@ internal fun TerminalView(
                     Text(
                         stringResource(R.string.remote_term_empty),
                         color = cx.faint,
-                        fontSize = 11.5.sp,
+                        style = RemoteType.caption,
                         fontFamily = FontFamily.Monospace,
                         lineHeight = 17.sp,
                     )
@@ -497,7 +503,7 @@ internal fun TerminalView(
                         TermKind.NOTE -> cx.faint
                     },
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
+                    style = RemoteType.bodySmall,
                     lineHeight = 17.sp,
                     modifier = Modifier.padding(vertical = 1.dp),
                 )

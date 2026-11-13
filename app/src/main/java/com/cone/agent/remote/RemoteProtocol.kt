@@ -44,7 +44,21 @@ data class RemoteSnapshot(
     val rootPath: String? = null,
     /** Reasoning effort: "low" | "medium" | "high". */
     val reasoningEffort: String? = null,
+    val capabilities: List<String> = emptyList(),
+    val computerId: String? = null,
+    val screenControlProvider: String? = null,
+    val viewMode: String = "work",
+    val rsi: RemoteRsiState? = null,
+    val question: RemoteQuestion? = null,
+    val error: String? = null,
+    val agentMode: String = "standard",
+    val planMode: Boolean = false,
+    val reviewMode: Boolean = false,
+    val queuedMessages: List<RemoteQueuedMessage> = emptyList(),
 )
+
+@Serializable
+data class RemoteQueuedMessage(val id: String = "", val content: String = "")
 
 /** One directory entry from a `listDir` reply. */
 @Serializable
@@ -63,6 +77,7 @@ data class SavedLogin(
 
 @Serializable
 data class RemoteConversation(
+    val viewMode: String = "work",
     val id: String = "",
     val title: String? = null,
     val isRunning: Boolean = false,
@@ -76,11 +91,39 @@ data class RemoteToolCall(
 )
 
 @Serializable
+data class RemoteRsiDirection(
+    val objective: String = "", val priorities: String = "", val metrics: String = "",
+    val scope: String = "", val constraints: String = "",
+)
+
+@Serializable
+data class RemoteRsiRun(
+    val id: String = "", val status: String = "", val iteration: Int = 0, val result: String? = null,
+)
+
+@Serializable
+data class RemoteRsiState(
+    val status: String = "idle", val directionConfig: RemoteRsiDirection = RemoteRsiDirection(),
+    val runs: List<RemoteRsiRun> = emptyList(), val canStart: Boolean = false,
+)
+
+@Serializable
+data class RemoteQuestion(
+    val id: String = "",
+    val conversationId: String = "",
+    val content: String = "",
+    val options: List<String> = emptyList(),
+    val canReply: Boolean = false,
+)
+
+@Serializable
 data class RemoteMessage(
     val id: String = "",
     val role: String = "",
     val content: String = "",
     val isToolResult: Boolean = false,
+    val isQuestion: Boolean = false,
+    val questionOptions: List<String> = emptyList(),
     val isLocalNotice: Boolean = false,
     val reasoningContent: String? = null,
     val toolCallId: String? = null,
@@ -133,6 +176,13 @@ val RemoteJson: Json = Json {
  * `handleCommand`. Serialized to a flat JSON object `{ "type": ..., <field>: ... }`.
  */
 sealed class RemoteCommand(val type: String) {
+    data class RenameConversation(val id: String, val title: String) : RemoteCommand("renameConversation")
+    data class SetViewMode(val value: String) : RemoteCommand("setViewMode")
+    data class SetAgentMode(val value: String) : RemoteCommand("setAgentMode")
+    data class SetPlanMode(val value: Boolean) : RemoteCommand("setPlanMode")
+    data class SetReviewMode(val value: Boolean) : RemoteCommand("setReviewMode")
+    data class EnqueueMessage(val text: String) : RemoteCommand("enqueueMessage")
+    data class DequeueMessage(val id: String) : RemoteCommand("dequeueMessage")
     data class Send(val text: String) : RemoteCommand("send")
     object Stop : RemoteCommand("stop")
     data class SwitchConversation(val id: String) : RemoteCommand("switchConversation")
@@ -148,6 +198,16 @@ sealed class RemoteCommand(val type: String) {
     fun toJsonObject(): JsonObject = buildJsonObject {
         put("type", JsonPrimitive(type))
         when (this@RemoteCommand) {
+            is RenameConversation -> {
+                put("id", JsonPrimitive(id))
+                put("title", JsonPrimitive(title))
+            }
+            is SetViewMode -> put("value", JsonPrimitive(value))
+            is SetAgentMode -> put("value", JsonPrimitive(value))
+            is SetPlanMode -> put("value", JsonPrimitive(value))
+            is SetReviewMode -> put("value", JsonPrimitive(value))
+            is EnqueueMessage -> put("text", JsonPrimitive(text))
+            is DequeueMessage -> put("id", JsonPrimitive(id))
             is Send -> put("text", JsonPrimitive(text))
             is SwitchConversation -> put("id", JsonPrimitive(id))
             is DeleteConversation -> put("id", JsonPrimitive(id))

@@ -77,12 +77,13 @@ internal fun TurnView(
     onRestore: () -> Unit = {},
     canPreview: Boolean = false,
     onPreview: () -> Unit = {},
+    isLast: Boolean = false,
 ) {
     when (turn.role) {
         CodeRole.USER -> UserBubble(turn.text, canRestore && turn.checkpoint != null, onRestore)
         CodeRole.ERROR -> ErrorCard(turn.text)
         CodeRole.NOTE -> NoteCard(turn.text)
-        CodeRole.ASSISTANT -> AssistantTurn(turn, onOpenFile, canPreview, onPreview)
+        CodeRole.ASSISTANT -> AssistantTurn(turn, onOpenFile, canPreview, onPreview, isLast)
     }
 }
 
@@ -202,6 +203,7 @@ private fun AssistantTurn(
     onOpenFile: (String) -> Unit,
     canPreview: Boolean,
     onPreview: () -> Unit,
+    isLast: Boolean,
 ) {
     // `done` never executes as a tool, so it takes no slot when pairing calls with outcomes.
     val paired = remember(turn.text, turn.results.size, turn.streaming) {
@@ -215,6 +217,9 @@ private fun AssistantTurn(
                     else segment to turn.results.getOrNull(index++)
             }
         }
+    }
+    val sawDone = paired.any { (segment, _) ->
+        segment is CodeSegment.Call && segment.call.tool == "done"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -230,10 +235,17 @@ private fun AssistantTurn(
                     "done" -> DoneCard(segment.call.content, canPreview, onPreview)
                     // The plan is the point of a todo block, so it renders as the list itself
                     // rather than as a tool row you have to open.
-                    "todo" -> TodoCard(segment.call.content)
+                    "todo", "update_todos" -> TodoCard(segment.call.content)
+                    // The approval bar only says "waiting"; the plan itself has to stay readable.
+                    "plan" -> PlanCard(segment.call.content)
                     else -> ToolCard(segment.call, outcome, onOpenFile)
                 }
             }
+        }
+        // ConeCode ends a task with plain prose instead of a `done` action, so the finished run
+        // offers the preview from the tail of the last assistant turn.
+        if (isLast && canPreview && !turn.streaming && !sawDone) {
+            PreviewButton(onPreview)
         }
         turn.tokens?.let {
             Text(
@@ -242,6 +254,19 @@ private fun AssistantTurn(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
         }
+    }
+}
+
+@Composable
+private fun PreviewButton(onPreview: () -> Unit) {
+    Button(
+        onClick = onPreview,
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
+        modifier = Modifier.padding(top = 4.dp),
+    ) {
+        Icon(Icons.Filled.PlayArrow, null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(R.string.code_preview_now))
     }
 }
 
@@ -279,6 +304,34 @@ private fun DoneCard(summary: String, canPreview: Boolean, onPreview: () -> Unit
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.code_preview_now))
             }
+        }
+    }
+}
+
+/**
+ * The plan the agent is holding for approval. It lives in the transcript because the approval bar
+ * only says "waiting" — the user has to be able to read what they are approving.
+ */
+@Composable
+private fun PlanCard(plan: String) {
+    if (plan.isBlank()) return
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                stringResource(R.string.code_tool_plan),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(8.dp))
+            MarkdownText(
+                markdown = plan,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -431,7 +484,7 @@ private fun ToolCard(call: ToolCall, outcome: ToolOutcome?, onOpenFile: (String)
                         modifier = Modifier.widthIn(max = 150.dp),
                     )
                 }
-                if (call.path.isNotBlank() && outcome?.ok == true && call.tool != "delete") {
+                if (call.tool in FILE_TOOLS && call.path.isNotBlank() && outcome?.ok == true) {
                     IconButton(onClick = { onOpenFile(call.path) }, modifier = Modifier.size(34.dp)) {
                         Icon(
                             Icons.AutoMirrored.Outlined.OpenInNew,
@@ -550,6 +603,22 @@ private fun DetailBody(detail: String, path: String) {
 @Composable
 private fun verbLabel(tool: String): String = stringResource(
     when (tool) {
+        // ConeCode action names
+        "read_file" -> R.string.code_tool_read
+        "list_dir" -> R.string.code_tool_list
+        "create_file" -> R.string.code_tool_write
+        "edit_file" -> R.string.code_tool_edit
+        "create_dir" -> R.string.code_tool_create_dir
+        "copy" -> R.string.code_tool_copy
+        "download" -> R.string.code_tool_download
+        "web_search" -> R.string.code_tool_web
+        "web_fetch" -> R.string.code_tool_fetch
+        "memory_search" -> R.string.code_tool_memory_search
+        "update_todos" -> R.string.code_tool_todo
+        "ask_user" -> R.string.code_tool_ask
+        "system_info" -> R.string.code_tool_system_info
+        "plan" -> R.string.code_tool_plan
+        // Legacy tag names, kept so saved transcripts still read correctly
         "read" -> R.string.code_tool_read
         "list" -> R.string.code_tool_list
         "search" -> R.string.code_tool_search
@@ -563,7 +632,12 @@ private fun verbLabel(tool: String): String = stringResource(
         "fetch" -> R.string.code_tool_fetch
         "remember" -> R.string.code_tool_remember
         "ask" -> R.string.code_tool_ask
-        "plan" -> R.string.code_tool_plan
         else -> R.string.code_tool_other
     },
+)
+
+/** Tools whose `path` can be opened in the editor pane. */
+private val FILE_TOOLS = setOf(
+    "read_file", "list_dir", "create_file", "edit_file", "create_dir", "copy", "rename",
+    "read", "list", "write", "edit", "rename", "glob", "search",
 )

@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -61,8 +62,9 @@ data class RemoteUiState(
  * 这样离开页面、切到后台、甚至旋转屏幕都不会把连接掐掉。
  */
 @HiltViewModel
-class RemoteViewModel @Inject constructor(
+class RemoteViewModel @Inject internal constructor(
     private val session: RemoteSession,
+    private val uuRemote: UuRemoteConnector,
 ) : ViewModel() {
 
     val state: StateFlow<RemoteUiState> = session.state
@@ -90,6 +92,53 @@ class RemoteViewModel @Inject constructor(
 
     fun sendMessage(text: String) {
         if (text.isNotBlank()) send(RemoteCommand.Send(text))
+    }
+
+    fun renameConversation(id: String, title: String) = send(RemoteCommand.RenameConversation(id, title))
+    fun setViewMode(value: String) = send(RemoteCommand.SetViewMode(value))
+    fun setAgentMode(value: String) = send(RemoteCommand.SetAgentMode(value))
+    fun setPlanMode(value: Boolean) = send(RemoteCommand.SetPlanMode(value))
+    fun setReviewMode(value: Boolean) = send(RemoteCommand.SetReviewMode(value))
+    fun enqueueMessage(text: String) = send(RemoteCommand.EnqueueMessage(text))
+    fun dequeueMessage(id: String) = send(RemoteCommand.DequeueMessage(id))
+
+    suspend fun answerQuestion(question: RemoteQuestion, text: String): Boolean {
+        val reply = session.client?.request("answerQuestion", mapOf(
+            "id" to question.id, "conversationId" to question.conversationId, "text" to text,
+        )) ?: return false
+        return reply["ok"]?.jsonPrimitive?.booleanOrNull == true
+    }
+
+    suspend fun rsiControl(conversationId: String, action: String): Boolean {
+        val reply = session.client?.request("rsiControl", mapOf("conversationId" to conversationId, "action" to action))
+        return reply?.get("ok")?.jsonPrimitive?.booleanOrNull == true
+    }
+
+    suspend fun saveRsiDirection(conversationId: String, direction: RemoteRsiDirection): Boolean {
+        val reply = session.client?.request("rsiDirection", mapOf("conversationId" to conversationId),
+            jsonFields = mapOf("direction" to RemoteJson.encodeToJsonElement(direction)))
+        return reply?.get("ok")?.jsonPrimitive?.booleanOrNull == true
+    }
+
+    internal val uuState = uuRemote.state
+    internal val remoteComputerId: String?
+        get() = session.client?.computerIdentity
+
+    internal fun refreshUu() = uuRemote.refresh()
+    internal fun bindUu(computerId: String) {
+        if (computerId == remoteComputerId) uuRemote.bind(computerId)
+    }
+    internal fun controlUu(computerId: String, mode: UuRemoteProtocol.Mode) {
+        if (computerId == remoteComputerId) uuRemote.control(computerId, mode)
+    }
+    internal fun forgetUu(computerId: String) = uuRemote.forget(computerId)
+    internal fun stopWaitingUu(computerId: String) = uuRemote.stopWaiting(computerId)
+
+    suspend fun changeDetail(id: String): Pair<String, String>? {
+        val reply = session.client?.request("changeDetail", mapOf("id" to id)) ?: return null
+        if (reply["ok"]?.jsonPrimitive?.booleanOrNull != true) return null
+        return (reply["originalCode"]?.jsonPrimitive?.contentOrNull ?: "") to
+            (reply["newCode"]?.jsonPrimitive?.contentOrNull ?: "")
     }
 
     fun stopGeneration() = send(RemoteCommand.Stop)
