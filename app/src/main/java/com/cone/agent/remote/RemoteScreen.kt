@@ -66,7 +66,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Difference
-import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LinkOff
@@ -184,8 +183,7 @@ internal enum class RemoteTab { CHAT, CHANGES, FILES, TERMINAL, SCREEN }
 
 /**
  * ConeAI sidebar entry that turns the phone into a remote control for a ConeCode desktop session.
- * A Codex-style pairing screen until connected, then a phone-proportioned mirror of the desktop chat
- * (messages, todos, approvals, conversations, model switching) driven over the HTTPS+SSE bridge.
+ * Select or pair a computer, then show that computer's desktop session over the HTTPS + SSE bridge.
  */
 @Composable
 fun RemoteScreen(
@@ -193,232 +191,239 @@ fun RemoteScreen(
     viewModel: RemoteViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    // 回到远程页时把上次的会话接回来（连接本身活在应用级单例里，不会因为离开页面而消失）。
-    LaunchedEffect(Unit) { viewModel.restore() }
-    // 镜像画面里有电脑桌面的全部内容：连接期间禁止截屏与最近任务缩略图。
+    var showComputers by rememberSaveable { mutableStateOf(false) }
+    var showPairing by rememberSaveable { mutableStateOf(false) }
+    var repairId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showPassword by remember { mutableStateOf(false) }
+    // A fast switch can reach CONNECTED again before Compose sees CONNECTING.
+    LaunchedEffect(state.phase, state.connectionAttempt) {
+        when (state.phase) {
+            RemotePhase.CONNECTED -> {
+                showComputers = false
+                showPairing = false
+                repairId = null
+                showPassword = false
+            }
+            RemotePhase.NEEDS_PASSWORD -> showPassword = true
+            RemotePhase.ERROR, RemotePhase.DISCONNECTED -> showPassword = false
+            RemotePhase.CONNECTING -> Unit
+        }
+    }
     val window = rememberWindow()
     DisposableEffect(state.showMirror) {
         if (state.showMirror) window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
-    // Once connected, follow the desktop's resolved theme so the mirror stays visually aligned.
     val desktopDark = state.snapshot?.theme == "dark"
     val palette = if (state.snapshot?.theme != null) {
         if (desktopDark) DarkPalette else LightPalette
     } else if (isSystemInDarkTheme()) DarkPalette else LightPalette
+
+    val context = LocalContext.current
+    val activity = remember(context) { context.fragmentActivity() }
+    val bioTitle = stringResource(R.string.remote_bio_title)
+    val bioSubtitle = stringResource(R.string.remote_bio_subtitle)
+    val openPairing: (String?) -> Unit = { id ->
+        repairId = id
+        showPairing = true
+    }
+    val closePicker: () -> Unit = {
+        if (showPairing) {
+            if (!state.showMirror && state.phase != RemotePhase.DISCONNECTED) viewModel.disconnect()
+            repairId = null
+            showPairing = false
+        } else if (showComputers) {
+            showComputers = false
+        } else {
+            onBack()
+        }
+    }
+    val selectComputer: (RemoteComputer) -> Unit = { computer ->
+        when {
+            state.phase == RemotePhase.CONNECTED && state.activeComputerId == computer.id -> {
+                showComputers = false
+            }
+            !computer.canConnect -> openPairing(computer.id)
+            activity != null && RemoteBiometric.isAvailable(context) -> {
+                RemoteBiometric.prompt(activity, bioTitle, bioSubtitle, onSuccess = { viewModel.connectComputer(computer.id) })
+            }
+            else -> viewModel.connectComputer(computer.id)
+        }
+    }
     ConeCodeRemoteTheme(palette) {
-        Surface(modifier = Modifier.fillMaxSize(), color = palette.bg0) {
-            if (state.showMirror) {
-                MirrorScreen(state = state, viewModel = viewModel)
+        val picker: @Composable () -> Unit = {
+            if (showPairing) {
+                val repair = state.computers.firstOrNull { it.id == repairId }
+                key(repairId) {
+                    ConnectScreen(
+                        state = state,
+                        repair = repair,
+                        onConnect = { url, pw, name -> viewModel.connect(url, pw, name, repairId) },
+                        onCancel = viewModel::disconnect,
+                        onBack = closePicker,
+                    )
+                }
             } else {
-                ConnectScreen(
+                RemoteComputersScreen(
                     state = state,
-                    onConnect = { url, pw -> viewModel.connect(url, pw) },
-                    onUnlock = viewModel::unlockSaved,
-                    onClearSaved = viewModel::clearSaved,
+                    onBack = closePicker,
+                    onSelect = selectComputer,
+                    onAdd = { openPairing(null) },
+                    onRepair = { openPairing(it) },
+                    onRename = viewModel::renameComputer,
+                    onRemove = viewModel::removeComputer,
                     onCancel = viewModel::disconnect,
-                    onBack = onBack,
                 )
             }
+        }
+        Surface(modifier = Modifier.fillMaxSize(), color = palette.bg0) {
+            if (state.showMirror) {
+                key(state.activeComputerId) {
+                    MirrorScreen(state = state, viewModel = viewModel, onOpenComputers = { showComputers = true })
+                }
+            }
+            if (showComputers) {
+                RemoteDialog(
+                    onDismissRequest = closePicker,
+                    properties = DialogProperties(usePlatformDefaultWidth = false),
+                    content = picker,
+                )
+            } else if (!state.showMirror) {
+                BackHandler(enabled = showPairing, onBack = closePicker)
+                picker()
+            }
+        }
+        if (showPassword) {
+            PasswordDialog(
+                label = state.endpointLabel.orEmpty(),
+                phase = state.phase,
+                onSubmit = viewModel::submitPassword,
+                onDismiss = { showPassword = false; viewModel.disconnect() },
+            )
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Connect screen (Codex-style pairing)
-// ---------------------------------------------------------------------------
+private fun Context.fragmentActivity(): FragmentActivity? {
+    var current = this
+    while (current is ContextWrapper) {
+        if (current is FragmentActivity) return current
+        current = current.baseContext
+    }
+    return null
+}
 
 @Composable
 private fun ConnectScreen(
     state: RemoteUiState,
-    onConnect: (String, String?) -> Unit,
-    onUnlock: () -> Unit,
-    onClearSaved: () -> Unit,
+    repair: RemoteComputer?,
+    onConnect: (String, String?, String?) -> Unit,
     onCancel: () -> Unit,
     onBack: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
-    var url by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    fun pw(): String? = password.ifBlank { null }
-
-    val context = LocalContext.current
-    val activity = context as? FragmentActivity
-    val bioAvailable = remember { RemoteBiometric.isAvailable(context) }
-    val canBiometric = state.canBiometric && bioAvailable && activity != null
-    val bioTitle = stringResource(R.string.remote_bio_title)
-    val bioSubtitle = stringResource(R.string.remote_bio_subtitle)
-    val unlock: () -> Unit = {
-        if (activity != null) RemoteBiometric.prompt(activity, bioTitle, bioSubtitle, onSuccess = onUnlock)
-    }
-    // Offer the biometric unlock automatically once when arriving with a saved login.
-    var bioPrompted by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(canBiometric) {
-        if (canBiometric && !bioPrompted && state.phase == RemotePhase.DISCONNECTED) {
-            bioPrompted = true
-            unlock()
+    var name by rememberSaveable { mutableStateOf(repair?.name.orEmpty()) }
+    var url by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    val connecting = state.phase == RemotePhase.CONNECTING
+    val submit: (String) -> Unit = { address ->
+        if (address.isNotBlank() && !connecting) {
+            onConnect(address, password.takeIf { it.isNotBlank() }, name.takeIf { it.isNotBlank() })
         }
     }
-
-    // When the desktop demands a password (e.g. right after scanning a public-mode QR),
-    // pop a password dialog; the control UI only shows once the password is accepted.
-    var showPwDialog by remember { mutableStateOf(false) }
-    LaunchedEffect(state.phase) {
-        if (state.phase == RemotePhase.NEEDS_PASSWORD) showPwDialog = true
-    }
-
     val scanPrompt = stringResource(R.string.remote_scan_prompt)
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        result.contents?.let { onConnect(it, pw()) }
+        result.contents?.let { address ->
+            url = address
+            submit(address)
+        }
     }
     val launchScan = {
         scanLauncher.launch(
             ScanOptions()
                 .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
-                .setOrientationLocked(true) // lock to the portrait capture activity below
+                .setOrientationLocked(true)
                 .setBeepEnabled(false)
                 .setCaptureActivity(PortraitCaptureActivity::class.java)
                 .setPrompt(scanPrompt),
         )
     }
-    val connecting = state.phase == RemotePhase.CONNECTING
 
     Column(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 6.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back), tint = cx.text)
-            }
-            Text(stringResource(R.string.remote_title), color = cx.text, style = RemoteType.heading, fontWeight = FontWeight.SemiBold)
-        }
-        HorizontalDivider(color = cx.border)
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(cx.accentSoft),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Filled.Smartphone, contentDescription = null, tint = cx.accent, modifier = Modifier.size(30.dp))
-            }
-            Spacer(Modifier.size(16.dp))
-            Text(stringResource(R.string.remote_connect_title), color = cx.text, style = RemoteType.display, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.size(8.dp))
-            Text(
-                stringResource(R.string.remote_connect_desc),
-                color = cx.muted,
-                style = RemoteType.body,
-                lineHeight = 20.sp,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.size(24.dp))
-
-            // Returning user with a saved login → fingerprint/face unlock ("passkey").
-            if (canBiometric) {
-                PrimaryButton(
-                    text = stringResource(R.string.remote_unlock),
-                    onClick = unlock,
-                    enabled = !connecting,
-                    leading = { Icon(Icons.Filled.Fingerprint, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-                )
-                Spacer(Modifier.size(8.dp))
-                Text(
-                    stringResource(R.string.remote_forget),
-                    color = cx.faint,
-                    style = RemoteType.bodySmall,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClearSaved).padding(horizontal = 10.dp, vertical = 6.dp),
-                )
-                Spacer(Modifier.size(22.dp))
-            }
-
-            PrimaryButton(
-                text = stringResource(R.string.remote_scan),
-                onClick = launchScan,
-                enabled = !connecting,
-                leading = { Icon(Icons.Filled.QrCodeScanner, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp)) },
-            )
-
-            Spacer(Modifier.size(20.dp))
-            OrDivider(stringResource(R.string.remote_or_manual))
-            Spacer(Modifier.size(16.dp))
-
-            DarkInput(
-                value = url,
-                onValueChange = { url = it },
-                placeholder = stringResource(R.string.remote_url_placeholder),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                imeAction = ImeAction.Next,
-            )
-            Spacer(Modifier.size(10.dp))
-            DarkInput(
-                value = password,
-                onValueChange = { password = it },
-                placeholder = stringResource(R.string.remote_password_optional),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                imeAction = ImeAction.Go,
-                onImeAction = { if (url.isNotBlank()) onConnect(url, pw()) },
-            )
-            Spacer(Modifier.size(12.dp))
-            SecondaryButton(
-                text = stringResource(R.string.remote_connect_btn),
-                onClick = { if (url.isNotBlank()) onConnect(url, pw()) },
-                enabled = !connecting && url.isNotBlank(),
-            )
-
-            state.savedUrl?.takeIf { it.isNotBlank() && it != url }?.let { saved ->
-                Spacer(Modifier.size(20.dp))
-                RememberedRow(
-                    label = RemoteEndpoint.parse(saved)?.display ?: saved,
-                    enabled = !connecting,
-                    onClick = { onConnect(saved, pw()) },
-                )
-            }
-
-            Spacer(Modifier.size(20.dp))
-            when {
-                connecting -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(strokeWidth = 2.dp, color = cx.accent, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.size(10.dp))
-                    Text(stringResource(R.string.remote_connecting), color = cx.muted, style = RemoteType.body)
-                    Spacer(Modifier.size(14.dp))
-                    Text(
-                        stringResource(R.string.action_cancel),
-                        color = cx.accent,
-                        style = RemoteType.body,
-                        modifier = Modifier.clickable(onClick = onCancel),
-                    )
-                }
-
-                state.phase == RemotePhase.ERROR -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(stringResource(R.string.remote_connect_failed), color = cx.danger, style = RemoteType.body, fontWeight = FontWeight.Medium)
-                    state.errorMessage?.let {
-                        Spacer(Modifier.size(4.dp))
-                        Text(it, color = cx.faint, style = RemoteType.bodySmall)
-                    }
-                }
-            }
-        }
-    }
-
-    if (showPwDialog) {
-        val target = state.savedUrl ?: url
-        PasswordDialog(
-            label = state.endpointLabel ?: (RemoteEndpoint.parse(target)?.display ?: ""),
-            phase = state.phase,
-            onSubmit = { p -> if (target.isNotBlank()) onConnect(target, p) },
-            onDismiss = { showPwDialog = false; onCancel() },
+        RemoteComputerHeader(
+            title = stringResource(if (repair == null) R.string.remote_computer_add else R.string.remote_computer_repair),
+            onBack = onBack,
         )
+        Box(
+            modifier = Modifier.fillMaxSize().navigationBarsPadding().imePadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(
+                modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth()
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)).background(cx.accentSoft),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Filled.Smartphone, contentDescription = null, tint = cx.accent, modifier = Modifier.size(30.dp))
+                }
+                Spacer(Modifier.size(16.dp))
+                Text(stringResource(R.string.remote_connect_title), color = cx.text, style = RemoteType.display, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.size(8.dp))
+                Text(stringResource(R.string.remote_connect_desc), color = cx.muted, style = RemoteType.body)
+                Spacer(Modifier.size(24.dp))
+
+                DarkInput(
+                    value = name,
+                    onValueChange = { name = it.take(80) },
+                    placeholder = stringResource(R.string.remote_computer_name_optional),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    imeAction = ImeAction.Next,
+                )
+                Spacer(Modifier.size(12.dp))
+                PrimaryButton(
+                    text = stringResource(R.string.remote_scan),
+                    onClick = launchScan,
+                    enabled = !connecting,
+                    leading = { Icon(Icons.Filled.QrCodeScanner, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp)) },
+                )
+
+                Spacer(Modifier.size(20.dp))
+                OrDivider(stringResource(R.string.remote_or_manual))
+                Spacer(Modifier.size(16.dp))
+                DarkInput(
+                    value = url,
+                    onValueChange = { url = it },
+                    placeholder = stringResource(R.string.remote_url_placeholder),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    imeAction = ImeAction.Next,
+                )
+                Spacer(Modifier.size(10.dp))
+                DarkInput(
+                    value = password,
+                    onValueChange = { password = it },
+                    placeholder = stringResource(R.string.remote_password_optional),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    mask = true,
+                    imeAction = ImeAction.Go,
+                    onImeAction = { submit(url) },
+                )
+                Spacer(Modifier.size(12.dp))
+                SecondaryButton(
+                    text = stringResource(R.string.remote_connect_btn),
+                    onClick = { submit(url) },
+                    enabled = !connecting && url.isNotBlank(),
+                )
+                Spacer(Modifier.size(20.dp))
+                RemoteConnectionFeedback(state, onCancel)
+            }
+        }
     }
 }
 
@@ -432,33 +437,12 @@ private fun OrDivider(label: String) {
     }
 }
 
-@Composable
-private fun RememberedRow(label: String, enabled: Boolean, onClick: () -> Unit) {
-    val cx = LocalRemotePalette.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(cx.bg2)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.Refresh, contentDescription = null, tint = cx.muted, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.size(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.remote_last_connected), color = cx.faint, style = RemoteType.caption)
-            Text(label, color = cx.text, style = RemoteType.monoBody, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Mirror screen (live ConeCode session, responsive phone / pad shells)
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
+private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel, onOpenComputers: () -> Unit) {
     val cx = LocalRemotePalette.current
     val snap = state.snapshot
     if (snap == null) {
@@ -470,6 +454,9 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("ConeCode", color = cx.text, style = RemoteType.brand, modifier = Modifier.weight(1f))
+                IconButton(onClick = onOpenComputers) {
+                    Icon(Icons.Filled.Computer, stringResource(R.string.remote_computers), tint = cx.muted)
+                }
                 Text(
                     stringResource(R.string.remote_disconnect),
                     color = cx.danger,
@@ -505,6 +492,7 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel) {
         sidebarMode = layout,
         twoPane = twoPane,
         onPickModel = onPickModel,
+        onOpenComputers = onOpenComputers,
     )
 
     if (showModelPicker) {
@@ -646,6 +634,7 @@ private fun ConeCodeShell(
     sidebarMode: RemoteLayout,
     twoPane: Boolean,
     onPickModel: () -> Unit,
+    onOpenComputers: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
     val terminal = rememberTerminalSession()
@@ -683,6 +672,7 @@ private fun ConeCodeShell(
             onSwitch = { viewModel.switchConversation(it); onTab(RemoteTab.CHAT); scope.launch { drawer.close() } },
             onDelete = viewModel::deleteConversation, onRename = viewModel::renameConversation,
             onDisconnect = viewModel::disconnect,
+            onOpenComputers = { scope.launch { drawer.close() }; onOpenComputers() },
         )
     }
     val onMenu: () -> Unit = if (rail) ({ scope.launch { drawer.open() } }) else ({ if (hingeLeft == null) sidebarVisible = !sidebarVisible })
@@ -700,6 +690,7 @@ private fun ConeCodeShell(
                     destination = destination, onDestination = onDestination, onMenu = onMenu,
                     onNew = { viewModel.newConversation(); onTab(RemoteTab.CHAT) },
                     onDisconnect = viewModel::disconnect,
+                    onOpenComputers = onOpenComputers,
                 )
             } else if (sidebarVisible || hingeLeft != null) {
                 Box(Modifier.width(hingeLeft ?: sidebarWidth).fillMaxHeight()) { sidebar() }
@@ -735,6 +726,7 @@ private fun CompactNavRail(
     onMenu: () -> Unit,
     onNew: () -> Unit,
     onDisconnect: () -> Unit,
+    onOpenComputers: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
     val width = if (LocalConfiguration.current.screenWidthDp < 360) 48.dp else 56.dp
@@ -754,6 +746,9 @@ private fun CompactNavRail(
         Spacer(Modifier.size(6.dp))
         RemoteViewNavigation(destination, compact = true, onSelect = onDestination)
         Spacer(Modifier.weight(1f))
+        IconButton(onClick = onOpenComputers, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Filled.Computer, stringResource(R.string.remote_computers), tint = cx.muted)
+        }
         IconButton(onClick = onDisconnect, modifier = Modifier.size(44.dp)) {
             Icon(Icons.Filled.LinkOff, stringResource(R.string.remote_disconnect), tint = cx.muted)
         }
@@ -775,6 +770,7 @@ private fun ConversationSidebar(
     onDelete: (String) -> Unit,
     onRename: (String, String) -> Unit,
     onDisconnect: () -> Unit,
+    onOpenComputers: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cx = LocalRemotePalette.current
@@ -834,6 +830,15 @@ private fun ConversationSidebar(
         )
         RemoteViewNavigation(destination, compact = false, onSelect = onDestination)
         HorizontalDivider(color = cx.border, modifier = Modifier.padding(vertical = 8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp))
+                .clickable(onClick = onOpenComputers).padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Computer, contentDescription = null, tint = cx.muted, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.size(8.dp))
+            Text(stringResource(R.string.remote_computers), color = cx.text, style = RemoteType.bodySmall)
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1833,7 +1838,7 @@ private fun EffortChip(value: String, label: String, current: String?, modifier:
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun ConfirmDialog(
+internal fun ConfirmDialog(
     title: String,
     message: String,
     confirmLabel: String,

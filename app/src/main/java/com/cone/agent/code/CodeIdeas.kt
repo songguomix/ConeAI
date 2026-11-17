@@ -9,7 +9,6 @@ import com.cone.agent.data.remote.dto.ContentPart
 import com.cone.agent.data.repository.ProviderRepository
 import com.cone.agent.data.repository.SettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,7 +37,7 @@ class CodeIdeas @Inject constructor(
 ) {
 
     suspend fun suggest(existing: List<String>): Result<List<ProjectIdea>> {
-        val selected = settingsRepository.chatModel.first() ?: settingsRepository.selectedModel.first()
+        val selected = settingsRepository.resolveConversationModel()
             ?: return Result.failure(IllegalStateException(LocaleHelper.string(context, R.string.code_err_no_model)))
         val provider = providerRepository.resolve(selected.providerId)
             ?: return Result.failure(IllegalStateException(LocaleHelper.string(context, R.string.code_err_no_provider)))

@@ -187,7 +187,6 @@ fun ChatScreen(
     val agentMessages by viewModel.agentMessages.collectAsStateWithLifecycle()
     val askMessages by viewModel.askMessages.collectAsStateWithLifecycle()
     val state by viewModel.agentState.collectAsStateWithLifecycle()
-    val label by viewModel.selectedLabel.collectAsStateWithLifecycle()
     val environment by viewModel.environment.collectAsStateWithLifecycle()
     val mode by viewModel.mode.collectAsStateWithLifecycle()
     val asking by viewModel.asking.collectAsStateWithLifecycle()
@@ -199,6 +198,11 @@ fun ChatScreen(
     val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
     val allModels by viewModel.allModels.collectAsStateWithLifecycle()
     val activeModel by viewModel.activeModel.collectAsStateWithLifecycle()
+    val conversationModel by viewModel.conversationModel.collectAsStateWithLifecycle()
+    val modelLabel = activeModel?.let { selected ->
+        allModels.firstOrNull { it.providerId == selected.providerId && it.modelId == selected.modelId }
+            ?.displayName ?: selected.modelId
+    }
 
     // 写代码 is the third page of this screen, not a destination of its own, so its view model lives
     // here alongside the chat one and its content is composed straight into the pager.
@@ -402,7 +406,7 @@ fun ChatScreen(
         gesturesEnabled = drawerState.isOpen,
         drawerContent = {
             ConeDrawer(
-                modelLabel = label?.modelId,
+                modelLabel = modelLabel,
                 conversations = conversations,
                 onDeleteConversation = { id -> viewModel.deleteConversation(id) },
                 // Close the drawer *then* act in the SAME coroutine, so the close animation finishes before
@@ -462,15 +466,15 @@ fun ChatScreen(
                         Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_menu))
                     }
                 },
-                // Center-left model id — tap to switch model inline (works even mid-answer).
+                // Tap the current model to switch inline (works even mid-answer).
                 title = {
                     ModelSwitcher(
-                        modelId = label?.modelId,
+                        modelLabel = modelLabel,
                         models = allModels,
                         activeProviderId = activeModel?.providerId,
                         activeModelId = activeModel?.modelId,
                         onSelect = { pid, mid -> viewModel.switchModel(pid, mid) },
-                        onOpenSettings = onOpenSettings,
+                        onOpenProviders = onOpenProviders,
                     )
                 },
             )
@@ -592,10 +596,11 @@ fun ChatScreen(
                 messages = if (page == 0) agentMessages else askMessages,
                 state = state,
                 environment = environment,
+                conversationModelReady = conversationModel != null,
                 asking = asking,
                 searching = searching,
                 onOpenPermissions = onOpenPermissions,
-                onOpenSettings = onOpenSettings,
+                onOpenProviders = onOpenProviders,
                 onPause = { viewModel.pause() },
                 onResume = { viewModel.resume() },
                 onStop = { viewModel.stop() },
@@ -684,10 +689,11 @@ private fun ChatModePage(
     messages: List<UiMessage>,
     state: com.cone.agent.agent.AgentRuntimeState,
     environment: EnvironmentStatus,
+    conversationModelReady: Boolean,
     asking: Boolean,
     searching: Boolean,
     onOpenPermissions: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenProviders: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
@@ -712,8 +718,8 @@ private fun ChatModePage(
         if (isAgentMode && !environment.fullyReady) {
             EnvironmentBanner(environment = environment, onFix = onOpenPermissions)
         }
-        if (!isAgentMode && !environment.modelReady) {
-            ModelHintCard(onOpenSettings = onOpenSettings)
+        if (!isAgentMode && !conversationModelReady) {
+            ModelHintCard(onOpenProviders = onOpenProviders)
         }
         // The status card stays up while the task runs, then lingers briefly on a terminal result
         // (succeeded/failed) so the user can read the outcome, and auto-closes afterwards. Without
@@ -1880,7 +1886,7 @@ private const val ISLAND_MS = 240
 
 
 @Composable
-private fun ModelHintCard(onOpenSettings: () -> Unit) {
+private fun ModelHintCard(onOpenProviders: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -1898,7 +1904,7 @@ private fun ModelHintCard(onOpenSettings: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
             }
-            Button(onClick = onOpenSettings) { Text(stringResource(R.string.model_hint_action)) }
+            Button(onClick = onOpenProviders) { Text(stringResource(R.string.model_hint_action)) }
         }
     }
 }

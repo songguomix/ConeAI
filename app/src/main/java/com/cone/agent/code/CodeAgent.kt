@@ -19,7 +19,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,7 +71,7 @@ class CodeAgent @Inject constructor(
         history: List<CodeTurn>,
         planMode: Boolean = false,
     ): Flow<CodeEvent> = flow {
-        val selected = settingsRepository.chatModel.first() ?: settingsRepository.selectedModel.first()
+        val selected = settingsRepository.resolveConversationModel()
         if (selected == null) {
             emit(CodeEvent.Failed(LocaleHelper.string(context, R.string.code_err_no_model)))
             return@flow
@@ -211,7 +210,7 @@ class CodeAgent @Inject constructor(
      * the model quietly forgetting the earliest — usually most important — instructions.
      */
     suspend fun summarize(turns: List<CodeTurn>): Result<String> {
-        val selected = settingsRepository.chatModel.first() ?: settingsRepository.selectedModel.first()
+        val selected = settingsRepository.resolveConversationModel()
             ?: return Result.failure(IllegalStateException(LocaleHelper.string(context, R.string.code_err_no_model)))
         val provider = providerRepository.resolve(selected.providerId)
             ?: return Result.failure(IllegalStateException(LocaleHelper.string(context, R.string.code_err_no_provider)))

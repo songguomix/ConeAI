@@ -13,7 +13,10 @@ enum class ProviderProtocol(val wireName: String) {
      * endpoint — no `/v1/...` suffix is auto-completed. For relays / proxies / gateways with a
      * non-standard path the user wants to control exactly.
      */
-    CUSTOM("custom");
+    CUSTOM("custom"),
+
+    /** The built-in, keyless ConeAI relay. It is never added through the provider editor. */
+    FREE("cone-free");
 
     companion object {
         /** Maps a stored/raw value back to a protocol, defaulting to [OPENAI] for unknown/blank input. */

@@ -8,6 +8,7 @@ import com.cone.agent.agent.action.ThinkEvent
 import com.cone.agent.core.Constants
 import com.cone.agent.core.LocaleHelper
 import com.cone.agent.data.remote.ChatChunk
+import com.cone.agent.data.remote.FreeRelayException
 import com.cone.agent.data.remote.LlmClient
 import com.cone.agent.data.remote.dto.ChatMessageDto
 import com.cone.agent.data.repository.ProviderRepository
@@ -230,7 +231,7 @@ class AgentEngine @Inject constructor(
             if (t is CancellationException) throw t
             // Nothing received yet → the endpoint may not stream at all; ask again without SSE.
             // A mid-stream failure (or an abort thrown by the collector) surfaces as-is instead.
-            if (!parser.isEmpty) throw t
+            if (!parser.isEmpty || (t as? FreeRelayException)?.canRetryNonStreaming == false) throw t
             fallbackThink(provider, selected.modelId, messages, visionTokens)
             return@flow
         }

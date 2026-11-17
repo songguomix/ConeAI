@@ -8,8 +8,8 @@ import androidx.fragment.app.FragmentActivity
 
 /**
  * Thin wrapper over AndroidX BiometricPrompt for the "passkey"-style unlock of the saved desktop-remote
- * login. Allows a strong/weak biometric OR the device PIN/pattern as a fallback. The encrypted login
- * itself lives in the Android Keystore (see [RemoteViewModel.unlockSaved]); this gates access to it.
+ * login. Allows a strong/weak biometric or the device PIN/pattern as a fallback. The saved login
+ * is encrypted with the Android Keystore and opened by [RemoteViewModel.connectComputer].
  */
 object RemoteBiometric {
     private const val AUTHENTICATORS =

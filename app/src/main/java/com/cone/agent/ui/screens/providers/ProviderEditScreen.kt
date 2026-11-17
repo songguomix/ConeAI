@@ -63,6 +63,7 @@ private fun protocolLabelRes(protocol: ProviderProtocol): Int = when (protocol) 
     ProviderProtocol.OPENAI -> R.string.provider_protocol_openai
     ProviderProtocol.ANTHROPIC -> R.string.provider_protocol_anthropic
     ProviderProtocol.CUSTOM -> R.string.provider_protocol_custom
+    ProviderProtocol.FREE -> R.string.free_provider_name
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -142,7 +143,7 @@ fun ProviderEditScreen(
                 modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
             )
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ProviderProtocol.entries.forEach { option ->
+                ProviderProtocol.entries.filter { it != ProviderProtocol.FREE }.forEach { option ->
                     FilterChip(
                         selected = protocol == option,
                         onClick = { protocol = option },
@@ -164,6 +165,7 @@ fun ProviderEditScreen(
                             ProviderProtocol.ANTHROPIC -> "https://api.anthropic.com"
                             ProviderProtocol.CUSTOM -> "https://your-proxy.com/v1/chat/completions"
                             ProviderProtocol.OPENAI -> "https://api.openai.com"
+                            ProviderProtocol.FREE -> ""
                         },
                     )
                 },

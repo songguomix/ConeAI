@@ -19,6 +19,9 @@
     <string name="cd_menu">Menu</string>
     <string name="cd_switch_model">Switch model</string>
     <string name="select_model">Select model</string>
+    <string name="model_search_hint">Search models</string>
+    <string name="model_search_clear">Clear search</string>
+    <string name="model_search_empty">No matching models</string>
 
     <string name="greeting_dawn">Good early morning</string>
     <string name="greeting_morning">Good morning</string>
@@ -84,8 +87,8 @@
     <string name="env_overlay">Allow overlay</string>
     <string name="env_capture">Grant screen capture</string>
     <string name="model_hint_title">No model selected</string>
-    <string name="model_hint_body">Tap “选择模型” at the top to pick a model, then ask away.</string>
-    <string name="model_hint_action">Choose</string>
+    <string name="model_hint_body">Choose a model at the top. If the list is empty, check the free service or add your own provider.</string>
+    <string name="model_hint_action">Providers</string>
 
     <!-- Shared -->
     <string name="cd_back">Back</string>
@@ -187,7 +190,7 @@
     <string name="settings_chat_vision_model_desc">Describes the image you send in Q&amp;A and outputs text. Must support vision.</string>
     <string name="settings_chat_model_title">Q&amp;A model (plain chat)</string>
     <string name="settings_chat_model_desc">The model used in Q&amp;A mode; can differ from the agent model. Pick any model you like.</string>
-    <string name="settings_no_models">No models available. Add a service in Manage providers and run Discover models first.</string>
+    <string name="settings_no_models">No models available. Open Manage providers to check the free service or add your own.</string>
     <string name="settings_max_steps">Max steps: %1$d</string>
     <string name="settings_max_steps_unlimited">Max steps: Unlimited</string>
     <string name="settings_unlimited_steps_title">Unlimited steps</string>
@@ -215,10 +218,27 @@
 
     <!-- Providers screen -->
     <string name="providers_add">Add provider</string>
-    <string name="providers_empty_title">No providers yet</string>
-    <string name="providers_empty_desc">Tap + at the bottom right to connect any OpenAI-compatible model service (GPT / Claude / Gemini / DeepSeek / Qwen / Ollama, etc.).</string>
+    <string name="providers_empty_title">No custom providers yet</string>
+    <string name="providers_empty_desc">You can also connect your own OpenAI-compatible or Anthropic model service.</string>
     <string name="providers_key_set">Key configured (encrypted)</string>
     <string name="providers_key_unset">No key configured</string>
+    <string name="free_provider_name">ConeAI Free</string>
+    <string name="free_provider_loading">Checking availability</string>
+    <string name="free_provider_status_unavailable">Temporarily unavailable</string>
+    <string name="free_provider_available">Available · No key required</string>
+    <string name="free_provider_no_models">No models available</string>
+    <string name="free_provider_closed">Currently closed</string>
+    <string name="free_provider_schedule">Available %1$s – %2$s</string>
+    <string name="free_provider_opens">Opens %1$s</string>
+    <string name="free_provider_closes">Closes %1$s</string>
+    <string name="free_provider_weekly_usage">Weekly usage %1$s / %2$s tokens</string>
+    <string name="free_provider_cycle_reset">Service resets %1$s</string>
+    <string name="free_provider_refresh">Refresh free service status</string>
+    <string name="free_provider_unavailable">ConeAI Free is temporarily unavailable. Try again later.</string>
+    <string name="free_provider_rate_limited">Too many requests to ConeAI Free. Try again later.</string>
+    <string name="free_provider_request_too_large">The request is too large. Remove some attachments or shorten the conversation and try again.</string>
+    <string name="free_provider_usage_exhausted">You reached the weekly free quota. Try again after it resets or switch models.</string>
+    <string name="free_provider_tools_unsupported">This free model does not support tool calls.</string>
 
     <!-- Provider edit screen -->
     <string name="provider_edit_new">Add provider</string>
@@ -516,6 +536,18 @@
     <!-- Desktop remote control -->
     <string name="drawer_remote">Remote control</string>
     <string name="remote_title">Remote control</string>
+    <string name="remote_computers">Choose a computer</string>
+    <string name="remote_computer_empty">No paired computers yet</string>
+    <string name="remote_computer_add">Add computer</string>
+    <string name="remote_computer_connected">Connected</string>
+    <string name="remote_computer_pair_required">Pairing required</string>
+    <string name="remote_computer_options">Options for %1$s</string>
+    <string name="remote_computer_name_optional">Computer name (optional)</string>
+    <string name="remote_computer_rename">Rename computer</string>
+    <string name="remote_computer_repair">Pair again</string>
+    <string name="remote_computer_origin_conflict">This address is already paired with another computer. Connect to that computer from the list, or scan the code for this computer.</string>
+    <string name="remote_computer_forget">Remove computer</string>
+    <string name="remote_computer_forget_confirm">Remove %1$s and its saved login from this device?</string>
     <string name="remote_connect_title">Connect to ConeCode</string>
     <string name="remote_connect_desc">On the desktop, open ConeCode\'s sidebar and tap \"Remote control\" to start the server, then scan the QR code here to view and drive that coding session from your phone.</string>
     <string name="remote_scan">Scan to connect</string>
@@ -719,7 +751,7 @@
     <string name="settings_dream_auto">Auto-consolidate memory</string>
     <string name="settings_dream_auto_desc">Distill each finished run into project notes (one extra model call)</string>
     <string name="code_tool_other">Run</string>
-    <string name="code_err_no_model">No model selected yet — pick one in Settings first.</string>
+    <string name="code_err_no_model">Choose an available model from the menu at the top.</string>
     <string name="code_err_no_provider">The provider for the selected model no longer exists.</string>
     <string name="code_err_request">Request failed</string>
     <string name="code_err_exists">A file named %1$s already exists</string>

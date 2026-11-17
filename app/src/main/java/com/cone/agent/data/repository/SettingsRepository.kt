@@ -8,8 +8,13 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.cone.agent.core.Constants
+import com.cone.agent.data.remote.FREE_PROVIDER_ID
+import com.cone.agent.data.remote.FreeRelay
+import com.cone.agent.data.remote.FreeStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -22,6 +27,20 @@ data class SelectedAgentModel(
     val providerId: Long,
     val modelId: String,
 )
+
+private fun SelectedAgentModel.isOffered(freeModelIds: List<String>): Boolean =
+    providerId != FREE_PROVIDER_ID || modelId in freeModelIds
+
+private fun FreeStatus?.offeredModelIds(): List<String> =
+    this?.takeIf { it.available }?.models.orEmpty().map { it.id }
+
+/** Losing a free model can switch to another free model, but cannot start using a paid endpoint. */
+internal fun pickConversationModel(
+    chat: SelectedAgentModel?,
+    agent: SelectedAgentModel?,
+    freeModelIds: List<String>,
+): SelectedAgentModel? = (chat ?: agent)?.takeIf { it.isOffered(freeModelIds) }
+    ?: freeModelIds.firstOrNull()?.let { SelectedAgentModel(FREE_PROVIDER_ID, it) }
 
 /** A user-supplied text-to-speech endpoint: chat-completions (`/v1/chat/completions`) with audio output. */
 data class TtsConfig(
@@ -70,14 +89,22 @@ enum class ScreenMode(val wire: String) {
 @Singleton
 class SettingsRepository @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val freeRelay: FreeRelay,
 ) {
     private val store = context.dataStore
+    private val freeModelIds = freeRelay.status.map { it.offeredModelIds() }.distinctUntilChanged()
 
-    val selectedModel: Flow<SelectedAgentModel?> = store.data.map { prefs ->
+    private val storedAgentModel: Flow<SelectedAgentModel?> = store.data.map { prefs ->
         val pid = prefs[KEY_PROVIDER_ID] ?: return@map null
         val mid = prefs[KEY_MODEL_ID] ?: return@map null
         if (mid.isBlank()) null else SelectedAgentModel(pid, mid)
     }
+
+    val selectedModel: Flow<SelectedAgentModel?> = availableSelection(storedAgentModel)
+
+    private fun availableSelection(selection: Flow<SelectedAgentModel?>): Flow<SelectedAgentModel?> =
+        combine(selection, freeModelIds) { selected, ids -> selected?.takeIf { it.isOffered(ids) } }
+            .distinctUntilChanged()
 
     /**
      * 智能体的「屏幕识别方式」，见 [ScreenMode]。
@@ -91,11 +118,11 @@ class SettingsRepository @Inject constructor(
     }
 
     /** 云端识别（拼凑双模型）下负责「看截图 → 文字描述画面」的视觉模型（必须支持视觉）。 */
-    val visionModel: Flow<SelectedAgentModel?> = store.data.map { prefs ->
+    val visionModel: Flow<SelectedAgentModel?> = availableSelection(store.data.map { prefs ->
         val pid = prefs[KEY_VISION_PROVIDER_ID] ?: return@map null
         val mid = prefs[KEY_VISION_MODEL_ID] ?: return@map null
         if (mid.isBlank()) null else SelectedAgentModel(pid, mid)
-    }
+    })
 
     /**
      * 问答「拼凑」（双模型）开关，独立于智能体：开启后由 [chatVisionModel] 先描述用户在问答里发送的图片，
@@ -104,17 +131,29 @@ class SettingsRepository @Inject constructor(
     val chatDualModelEnabled: Flow<Boolean> = store.data.map { it[KEY_CHAT_DUAL_MODEL] ?: false }
 
     /** 问答双模型模式下负责「看图 → 文字描述」的视觉模型（必须支持视觉），独立于智能体的 [visionModel]。 */
-    val chatVisionModel: Flow<SelectedAgentModel?> = store.data.map { prefs ->
+    val chatVisionModel: Flow<SelectedAgentModel?> = availableSelection(store.data.map { prefs ->
         val pid = prefs[KEY_CHAT_VISION_PROVIDER_ID] ?: return@map null
         val mid = prefs[KEY_CHAT_VISION_MODEL_ID] ?: return@map null
         if (mid.isBlank()) null else SelectedAgentModel(pid, mid)
-    }
+    })
 
     /** The model used for plain Q&A (问答) mode; may differ from the agent's vision model. */
     val chatModel: Flow<SelectedAgentModel?> = store.data.map { prefs ->
         val pid = prefs[KEY_CHAT_PROVIDER_ID] ?: return@map null
         val mid = prefs[KEY_CHAT_MODEL_ID] ?: return@map null
         if (mid.isBlank()) null else SelectedAgentModel(pid, mid)
+    }
+
+    /** Free defaults are kept in memory so a changing catalog never overwrites a saved choice. */
+    val conversationModel: Flow<SelectedAgentModel?> = combine(chatModel, storedAgentModel, freeModelIds, ::pickConversationModel)
+        .distinctUntilChanged()
+
+    /** Wait for the catalogue on cold starts only when the saved choice requires it. */
+    suspend fun resolveConversationModel(): SelectedAgentModel? {
+        val (chat, agent) = combine(chatModel, storedAgentModel) { chat, agent -> chat to agent }.first()
+        val configured = chat ?: agent
+        if (configured != null && configured.providerId != FREE_PROVIDER_ID) return configured
+        return pickConversationModel(chat, agent, freeRelay.statusForRequest().offeredModelIds())
     }
 
     val maxSteps: Flow<Int> = store.data.map { it[KEY_MAX_STEPS] ?: Constants.DEFAULT_MAX_STEPS }
@@ -151,11 +190,7 @@ class SettingsRepository @Inject constructor(
     /** UI language tag: "zh" (default), "en" or "ja". Applied app-wide by [com.cone.agent.MainActivity]. */
     val appLanguage: Flow<String> = store.data.map { it[KEY_APP_LANGUAGE] ?: "zh" }
 
-    /**
-     * The last ConeCode desktop-remote pairing URL (full `http://host:port/?t=token`), remembered so
-     * the remote screen can offer a one-tap reconnect. Null until the user pairs once.
-     */
-    val remoteEndpoint: Flow<String?> = store.data.map { it[KEY_REMOTE_ENDPOINT]?.takeIf { v -> v.isNotBlank() } }
+    internal val remoteDirectory: Flow<String?> = store.data.map { it[KEY_REMOTE_DIRECTORY] }.distinctUntilChanged()
 
     suspend fun selectModel(providerId: Long, modelId: String) {
         store.edit {
@@ -284,29 +319,22 @@ class SettingsRepository @Inject constructor(
         com.cone.agent.core.LocaleHelper.setLanguage(context, tag)
     }
 
-    suspend fun setRemoteEndpoint(url: String?) {
-        store.edit {
-            if (url.isNullOrBlank()) it.remove(KEY_REMOTE_ENDPOINT) else it[KEY_REMOTE_ENDPOINT] = url
+    /** Migrate and remove the old single login in the same transaction as saving the directory. */
+    internal suspend fun migrateRemoteDirectory(create: (String?, String?, String?) -> String) {
+        store.edit { prefs ->
+            if (prefs[KEY_REMOTE_DIRECTORY] == null) {
+                prefs[KEY_REMOTE_DIRECTORY] = create(
+                    prefs[KEY_REMOTE_ENDPOINT], prefs[KEY_REMOTE_SECRET], prefs[KEY_REMOTE_SECRET_IV],
+                )
+                prefs.remove(KEY_REMOTE_ENDPOINT)
+                prefs.remove(KEY_REMOTE_SECRET)
+                prefs.remove(KEY_REMOTE_SECRET_IV)
+            }
         }
     }
 
-    /** True when a biometric-protected remote login (encrypted url+password) is saved. */
-    val hasRemoteSecret: Flow<Boolean> = store.data.map { !it[KEY_REMOTE_SECRET].isNullOrBlank() }
-
-    /** Read the stored (cipherText, iv) of the encrypted remote login, or null if none. */
-    suspend fun readRemoteSecret(): Pair<String, String>? {
-        val prefs = store.data.first()
-        val cipher = prefs[KEY_REMOTE_SECRET]?.takeIf { it.isNotBlank() } ?: return null
-        val iv = prefs[KEY_REMOTE_SECRET_IV]?.takeIf { it.isNotBlank() } ?: return null
-        return cipher to iv
-    }
-
-    suspend fun setRemoteSecret(cipherText: String, iv: String) {
-        store.edit { it[KEY_REMOTE_SECRET] = cipherText; it[KEY_REMOTE_SECRET_IV] = iv }
-    }
-
-    suspend fun clearRemoteSecret() {
-        store.edit { it.remove(KEY_REMOTE_SECRET); it.remove(KEY_REMOTE_SECRET_IV) }
+    internal suspend fun updateRemoteDirectory(transform: (String?) -> String) {
+        store.edit { prefs -> prefs[KEY_REMOTE_DIRECTORY] = transform(prefs[KEY_REMOTE_DIRECTORY]) }
     }
 
     private companion object {
@@ -340,6 +368,7 @@ class SettingsRepository @Inject constructor(
         val KEY_WEB_SEARCH = booleanPreferencesKey("web_search_enabled")
         val KEY_SEARCH_ENGINE = stringPreferencesKey("search_engine")
         val KEY_REMOTE_ENDPOINT = stringPreferencesKey("remote_endpoint")
+        val KEY_REMOTE_DIRECTORY = stringPreferencesKey("remote_directory")
         val KEY_REMOTE_SECRET = stringPreferencesKey("remote_secret_cipher")
         val KEY_REMOTE_SECRET_IV = stringPreferencesKey("remote_secret_iv")
     }

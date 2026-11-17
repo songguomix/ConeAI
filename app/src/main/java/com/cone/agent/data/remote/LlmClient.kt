@@ -12,6 +12,7 @@ import com.cone.agent.data.remote.dto.StreamOptions
 import com.cone.agent.domain.model.ProviderProtocol
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.serialization.json.Json
@@ -52,6 +53,7 @@ sealed interface ChatChunk {
 class LlmClient @Inject constructor(
     private val api: LlmApi,
     private val json: Json,
+    private val freeRelay: FreeRelay,
 ) {
 
     /**
@@ -69,7 +71,7 @@ class LlmClient @Inject constructor(
         maxTokens: Int = 1500,
     ): Flow<ChatChunk> = flow {
         when (protocol) {
-            ProviderProtocol.OPENAI, ProviderProtocol.CUSTOM -> {
+            ProviderProtocol.OPENAI, ProviderProtocol.CUSTOM, ProviderProtocol.FREE -> {
                 val body = ChatRequest(
                     model = model,
                     messages = messages,
@@ -78,6 +80,10 @@ class LlmClient @Inject constructor(
                     stream = true,
                     streamOptions = StreamOptions(includeUsage = true),
                 )
+                if (protocol == ProviderProtocol.FREE) {
+                    emitAll(freeRelay.chatStream(body))
+                    return@flow
+                }
                 val url = EndpointResolver.chatUrl(baseUrl, protocol)
                 val response = withErrorDetail(url) { api.chatStream(url, authHeader(apiKey), body) }
                 var tokens: Int? = null
@@ -148,6 +154,7 @@ class LlmClient @Inject constructor(
             ProviderProtocol.OPENAI, ProviderProtocol.CUSTOM ->
                 openAiChat(baseUrl, apiKey, model, messages, protocol, temperature, maxTokens)
             ProviderProtocol.ANTHROPIC -> anthropicChat(baseUrl, apiKey, model, messages, temperature, maxTokens)
+            ProviderProtocol.FREE -> freeRelay.chat(ChatRequest(model, messages, temperature, maxTokens))
         }
     }
 
@@ -156,6 +163,11 @@ class LlmClient @Inject constructor(
         apiKey: String,
         protocol: ProviderProtocol = ProviderProtocol.OPENAI,
     ): Result<List<DiscoveredModel>> = runCatching {
+        if (protocol == ProviderProtocol.FREE) {
+            return@runCatching freeRelay.refresh()?.models.orEmpty().map {
+                DiscoveredModel(it.id, apiVision = it.supportsVision, apiTools = it.supportsTools)
+            }
+        }
         val url = EndpointResolver.modelsUrl(baseUrl, protocol)
         val response = withErrorDetail(url) {
             when (protocol) {

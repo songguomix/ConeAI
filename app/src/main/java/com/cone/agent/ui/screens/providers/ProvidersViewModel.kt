@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cone.agent.R
 import com.cone.agent.core.LocaleHelper
+import com.cone.agent.data.remote.FreeRelay
 import com.cone.agent.data.repository.ProviderRepository
 import com.cone.agent.domain.model.ModelInfo
 import com.cone.agent.domain.model.Provider
@@ -25,12 +26,22 @@ import javax.inject.Inject
 class ProvidersViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: ProviderRepository,
+    private val freeRelay: FreeRelay,
 ) : ViewModel() {
 
     private fun str(id: Int, vararg args: Any) = LocaleHelper.string(context, id, *args)
 
     val providers: StateFlow<List<Provider>> = repository.providers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val freeStatus = freeRelay.status
+    val freeLoading = freeRelay.loading
+    val freeWeeklyUsed = freeRelay.weeklyUsed
+
+    fun refreshFree() {
+        if (freeLoading.value) return
+        viewModelScope.launch { freeRelay.refresh() }
+    }
 
     private val _discovering = MutableStateFlow(false)
     val discovering: StateFlow<Boolean> = _discovering

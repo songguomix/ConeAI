@@ -27,6 +27,8 @@ import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.coroutineContext
 
 /** Header carrying the session token; also sent as `?t=` for backwards compatibility. */
@@ -138,6 +140,14 @@ class RemoteClient(
 
     // In-flight request/reply calls (file browse, read/write, exec, openFolder) keyed by reqId.
     private val pending = ConcurrentHashMap<String, CompletableDeferred<JsonObject>>()
+    private val streamStopped = AtomicBoolean(false)
+    private val activeStream = AtomicReference<Call?>(null)
+
+    /** Cancel the blocking SSE read immediately when another computer is selected. */
+    internal fun stopStreaming() {
+        streamStopped.set(true)
+        activeStream.getAndSet(null)?.cancel()
+    }
 
     /**
      * Connect and keep mirroring until the calling coroutine is cancelled, reconnecting with capped
@@ -150,7 +160,7 @@ class RemoteClient(
         onStream: (StreamDelta) -> Unit,
     ) {
         var backoff = 1_000L
-        while (coroutineContext.isActive) {
+        while (coroutineContext.isActive && !streamStopped.get()) {
             onStatus(RemoteStatus.Connecting)
             try {
                 readStream(onStatus, onSnapshot, onStream)
@@ -168,7 +178,7 @@ class RemoteClient(
                     onStatus(RemoteStatus.Error(redactSecret(e.message ?: "connection lost")))
                 }
             }
-            if (!coroutineContext.isActive) break
+            if (!coroutineContext.isActive || streamStopped.get()) break
             delay(backoff)
             backoff = (backoff * 2).coerceAtMost(8_000L)
         }
@@ -187,6 +197,8 @@ class RemoteClient(
             .apply { endpoint.password?.let { header("x-remote-pass", it) } }
             .build()
         val call: Call = streamClient.newCall(request)
+        activeStream.set(call)
+        if (streamStopped.get()) call.cancel()
         // Cancelling the coroutine cancels the in-flight call, which unblocks the blocking line read.
         val handle = coroutineContext[Job]?.invokeOnCompletion {
             runCatching { call.cancel() }
@@ -219,6 +231,7 @@ class RemoteClient(
                 }
             }
         } finally {
+            activeStream.compareAndSet(call, null)
             handle?.dispose()
         }
     }

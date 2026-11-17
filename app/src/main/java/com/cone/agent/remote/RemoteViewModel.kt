@@ -35,14 +35,14 @@ enum class RemotePhase { DISCONNECTED, CONNECTING, CONNECTED, ERROR, NEEDS_PASSW
 
 data class RemoteUiState(
     val phase: RemotePhase = RemotePhase.DISCONNECTED,
+    val connectionAttempt: Long = 0,
     /** Technical detail for the latest failure (shown under a localized title). */
     val errorMessage: String? = null,
     /** Token-free label of the connected/last target, e.g. "192.168.1.23:8723". */
     val endpointLabel: String? = null,
-    /** The last successfully-entered pairing URL, for one-tap reconnect. */
-    val savedUrl: String? = null,
-    /** A biometric-protected saved login exists (enables the fingerprint/face unlock). */
-    val canBiometric: Boolean = false,
+    val computers: List<RemoteComputer> = emptyList(),
+    val activeComputerId: String? = null,
+    val lastComputerId: String? = null,
     /** True when this session runs over plain http on a LAN address (no transport encryption). */
     val insecure: Boolean = false,
     val snapshot: RemoteSnapshot? = null,
@@ -69,19 +69,13 @@ class RemoteViewModel @Inject internal constructor(
 
     val state: StateFlow<RemoteUiState> = session.state
 
-    fun connect(raw: String, password: String? = null) = session.connect(raw, password)
+    fun connect(raw: String, password: String? = null, name: String? = null, replaceComputerId: String? = null) =
+        session.connect(raw, password, name, replaceComputerId)
 
-    /** Reconnect to the remembered desktop, if any. */
-    fun reconnect() = session.reconnect()
-
-    /** Auto-restore when the remote screen comes back (skipped right after the user disconnects). */
-    fun restore() = session.restore()
-
-    /** After a successful biometric prompt: decrypt and connect with the saved url + password. */
-    fun unlockSaved() = session.unlockSaved()
-
-    /** Forget the saved (biometric) login and the reconnect URL. */
-    fun clearSaved() = session.clearSaved()
+    fun connectComputer(id: String) = session.connectComputer(id)
+    fun renameComputer(id: String, name: String) = session.renameComputer(id, name)
+    fun removeComputer(id: String) = session.removeComputer(id)
+    fun submitPassword(password: String) = session.submitPassword(password)
 
     fun disconnect() = session.disconnect()
 

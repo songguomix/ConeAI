@@ -10,12 +10,16 @@ import com.cone.agent.data.local.dao.ProviderDao
 import com.cone.agent.data.local.entity.ModelEntity
 import com.cone.agent.data.local.entity.ProviderEntity
 import com.cone.agent.data.local.entity.VisionModelView
+import com.cone.agent.data.remote.FREE_BASE_URL
+import com.cone.agent.data.remote.FREE_PROVIDER_ID
+import com.cone.agent.data.remote.FreeRelay
 import com.cone.agent.data.remote.LlmClient
 import com.cone.agent.domain.model.ModelInfo
 import com.cone.agent.domain.model.Provider
 import com.cone.agent.domain.model.ProviderProtocol
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,14 +40,31 @@ class ProviderRepository @Inject constructor(
     private val modelDao: ModelDao,
     private val keystore: KeystoreManager,
     private val llmClient: LlmClient,
+    private val freeRelay: FreeRelay,
 ) {
 
     val providers: Flow<List<Provider>> = providerDao.observeAll().map { list ->
         list.map { it.toDomain() }
     }
 
-    /** All discovered models — the user picks freely for either the agent or 问答 mode. */
-    val allModels: Flow<List<VisionModelView>> = modelDao.observeAllModels()
+    /** The built-in catalog is driven by the relay; Room only contains user-configured providers. */
+    val allModels: Flow<List<VisionModelView>> = combine(freeRelay.status, modelDao.observeAllModels()) { status, saved ->
+        val free = status?.takeIf { it.available }?.models.orEmpty()
+        if (free.isEmpty()) saved else {
+            val name = LocaleHelper.string(context, R.string.free_provider_name)
+            free.mapIndexed { index, model ->
+                VisionModelView(
+                    modelRowId = -1L - index,
+                    providerId = FREE_PROVIDER_ID,
+                    providerName = name,
+                    modelId = model.id,
+                    displayName = model.name,
+                    supportsVision = model.supportsVision,
+                    supportsTools = model.supportsTools,
+                )
+            } + saved
+        }
+    }
 
     fun modelsOf(providerId: Long): Flow<List<ModelInfo>> =
         modelDao.observeByProvider(providerId).map { list -> list.map { it.toDomain() } }
@@ -56,6 +77,7 @@ class ProviderRepository @Inject constructor(
         apiKeyPlain: String?,
         manualModels: Boolean = false,
     ): Long {
+        require(id != FREE_PROVIDER_ID && protocol != ProviderProtocol.FREE)
         val existing = if (id != 0L) providerDao.getById(id) else null
         val sealed: Sealed = when {
             apiKeyPlain != null -> keystore.encrypt(apiKeyPlain)
@@ -115,6 +137,13 @@ class ProviderRepository @Inject constructor(
     }
 
     suspend fun resolve(providerId: Long): ResolvedProvider? {
+        if (providerId == FREE_PROVIDER_ID) return ResolvedProvider(
+            id = FREE_PROVIDER_ID,
+            name = LocaleHelper.string(context, R.string.free_provider_name),
+            baseUrl = FREE_BASE_URL,
+            apiKey = "",
+            protocol = ProviderProtocol.FREE,
+        )
         val entity = providerDao.getById(providerId) ?: return null
         val apiKey = runCatching {
             keystore.decrypt(Sealed(entity.apiKeyCipher, entity.apiKeyIv))
@@ -130,6 +159,9 @@ class ProviderRepository @Inject constructor(
 
     /** Calls GET /models and persists results, tagging capabilities strictly from what the API declares. */
     suspend fun discoverModels(providerId: Long): Result<List<ModelInfo>> {
+        if (providerId == FREE_PROVIDER_ID) {
+            return Result.failure(IllegalArgumentException(LocaleHelper.string(context, R.string.provider_missing)))
+        }
         val resolved = resolve(providerId)
             ?: return Result.failure(IllegalStateException(LocaleHelper.string(context, R.string.provider_missing)))
         return llmClient.listModels(resolved.baseUrl, resolved.apiKey, resolved.protocol).map { discovered ->

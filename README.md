@@ -10,7 +10,7 @@
 - **问答（Q&A）**：把它当普通 AI 助手用，纯文本对话，可附带图片 / 文件，可一键联网搜索。
 - **语音助手**：长按电源/Home 唤起，或直接说唤醒词「**松果 / Hey pine cone**」，弹出底部悬浮胶囊进行语音提问或下达任务。
 
-> 自带模型由你接入：任意 OpenAI 兼容服务，API Key 本地加密存储。
+> 内置免费模型开放时无需 API Key，也可接入自己的模型服务。自配 API Key 在本机加密存储。
 
 ---
 
@@ -79,7 +79,9 @@
 
 ## 模型系统（开放 Provider 架构）
 
-- 不写死任何模型。用户自行新增 Provider：名称 + Base URL + API Key
+- **ConeAI 免费**：开放时自动出现在顶栏模型菜单。不需注册或填写 API Key；没有配置问答或智能体模型时，问答和写代码会使用首个可用的免费模型。
+- 在「Provider 管理」可查看免费服务的开放状态和本机每周用量。免费请求通过官方中继发送。
+- 可以自行新增 Provider：名称 + Base URL + API Key。
 - 兼容任意 OpenAI 风格服务：GPT / Claude / Gemini / DeepSeek / Qwen / Kimi / GLM / MiniMax / OpenRouter / Ollama / LM Studio / vLLM …
 - 自动发现模型：`GET /models`
 - **可自由选择任意模型**作为「智能体主模型」或「问答模型」（不再限制视觉模型，是否支持视觉不再影响选择）
@@ -205,7 +207,7 @@ The `vosk-model` (~65 MB) is gitignored. After cloning, download on demand:
 
 ### 首次使用前的环境准备（应用内「权限与环境」页一键引导）
 
-1. 在「模型与设置」选择一个模型（需先在「Provider 管理」新增 Provider 并「自动发现模型」）
+1. 在聊天顶栏选一个可用的模型。可以选开放中的免费模型，也可以到「Provider 管理」接入自己的模型服务。
 2. 开启**无障碍服务**（智能体的“手”）
 3. 允许**悬浮窗**权限（悬浮控制中心 / 唤醒后弹窗）
 4. 授权**屏幕捕获**（智能体的“眼”）

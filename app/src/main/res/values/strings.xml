@@ -20,6 +20,9 @@
     <string name="cd_menu">菜单</string>
     <string name="cd_switch_model">切换模型</string>
     <string name="select_model">选择模型</string>
+    <string name="model_search_hint">搜索模型</string>
+    <string name="model_search_clear">清除搜索</string>
+    <string name="model_search_empty">没有匹配的模型</string>
 
     <string name="greeting_dawn">凌晨好</string>
     <string name="greeting_morning">早上好</string>
@@ -85,8 +88,8 @@
     <string name="env_overlay">允许悬浮窗</string>
     <string name="env_capture">授权屏幕捕获</string>
     <string name="model_hint_title">还没有选择模型</string>
-    <string name="model_hint_body">点顶部的「选择模型」挑一个模型，就能开始提问了。</string>
-    <string name="model_hint_action">去选择</string>
+    <string name="model_hint_body">先在顶部选择模型。若列表为空，可以查看免费服务状态或添加自定义服务。</string>
+    <string name="model_hint_action">Provider 管理</string>
 
     <!-- Shared -->
     <string name="cd_back">返回</string>
@@ -188,7 +191,7 @@
     <string name="settings_chat_vision_model_desc">负责描述你在问答中发送的图片并输出文字，必须支持视觉。</string>
     <string name="settings_chat_model_title">问答模型（普通对话）</string>
     <string name="settings_chat_model_desc">「问答」模式使用的模型，可与「智能体」主模型不同，可任意选择。</string>
-    <string name="settings_no_models">暂无可用模型。请先在 Provider 管理中接入服务并「自动发现模型」。</string>
+    <string name="settings_no_models">暂无可用模型。前往 Provider 管理查看免费服务状态或添加服务。</string>
     <string name="settings_max_steps">最大步骤数：%1$d</string>
     <string name="settings_max_steps_unlimited">最大步骤数：无限</string>
     <string name="settings_unlimited_steps_title">不限步数（无限）</string>
@@ -216,10 +219,27 @@
 
     <!-- Providers screen -->
     <string name="providers_add">新增 Provider</string>
-    <string name="providers_empty_title">还没有任何 Provider</string>
-    <string name="providers_empty_desc">点击右下角 + 接入任意 OpenAI 兼容模型服务（GPT / Claude / Gemini / DeepSeek / Qwen / Ollama 等）。</string>
+    <string name="providers_empty_title">还没有自定义 Provider</string>
+    <string name="providers_empty_desc">你也可以接入自己的 OpenAI 兼容或 Anthropic 模型服务。</string>
     <string name="providers_key_set">已配置密钥（加密存储）</string>
     <string name="providers_key_unset">未配置密钥</string>
+    <string name="free_provider_name">ConeAI 免费</string>
+    <string name="free_provider_loading">正在检查</string>
+    <string name="free_provider_status_unavailable">暂不可用</string>
+    <string name="free_provider_available">可用 · 无需密钥</string>
+    <string name="free_provider_no_models">暂无模型</string>
+    <string name="free_provider_closed">当前未开放</string>
+    <string name="free_provider_schedule">开放时间 %1$s – %2$s</string>
+    <string name="free_provider_opens">开放时间 %1$s</string>
+    <string name="free_provider_closes">关闭时间 %1$s</string>
+    <string name="free_provider_weekly_usage">本周用量 %1$s / %2$s token</string>
+    <string name="free_provider_cycle_reset">服务重置时间 %1$s</string>
+    <string name="free_provider_refresh">刷新免费服务状态</string>
+    <string name="free_provider_unavailable">ConeAI 免费服务暂不可用，请稍后重试。</string>
+    <string name="free_provider_rate_limited">ConeAI 免费服务请求过于频繁，请稍后重试。</string>
+    <string name="free_provider_request_too_large">请求过大，请减少附件或缩短对话后重试。</string>
+    <string name="free_provider_usage_exhausted">本周免费额度已用完，请在额度重置后重试或切换模型。</string>
+    <string name="free_provider_tools_unsupported">此免费模型不支持工具调用。</string>
 
     <!-- Provider edit screen -->
     <string name="provider_edit_new">新增 Provider</string>
@@ -517,6 +537,18 @@
     <!-- Desktop remote control -->
     <string name="drawer_remote">远程控制电脑</string>
     <string name="remote_title">远程控制</string>
+    <string name="remote_computers">选择电脑</string>
+    <string name="remote_computer_empty">还没有配对的电脑</string>
+    <string name="remote_computer_add">添加电脑</string>
+    <string name="remote_computer_connected">已连接</string>
+    <string name="remote_computer_pair_required">需要重新配对</string>
+    <string name="remote_computer_options">%1$s 的选项</string>
+    <string name="remote_computer_name_optional">电脑名称（可选）</string>
+    <string name="remote_computer_rename">重命名电脑</string>
+    <string name="remote_computer_repair">重新配对</string>
+    <string name="remote_computer_origin_conflict">这个地址已配对到另一台电脑。请连接列表中的那台电脑，或扫描当前电脑的配对码。</string>
+    <string name="remote_computer_forget">移除电脑</string>
+    <string name="remote_computer_forget_confirm">移除「%1$s」及此设备上保存的登录信息？</string>
     <string name="remote_connect_title">连接到 ConeCode</string>
     <string name="remote_connect_desc">在电脑端 ConeCode 侧边栏点击「远程控制」开启服务，然后用手机扫描二维码，即可在手机上查看并操控电脑上的编码会话。</string>
     <string name="remote_scan">扫码连接</string>
@@ -720,7 +752,7 @@
     <string name="settings_dream_auto">自动整理记忆</string>
     <string name="settings_dream_auto_desc">每轮任务结束后把会话沉淀成项目笔记（会多一次模型调用）</string>
     <string name="code_tool_other">执行</string>
-    <string name="code_err_no_model">尚未选择模型，请先在设置中选择一个模型。</string>
+    <string name="code_err_no_model">没有选中可用模型，请在顶栏选择模型。</string>
     <string name="code_err_no_provider">所选模型对应的 Provider 不存在。</string>
     <string name="code_err_request">请求失败</string>
     <string name="code_err_exists">已存在同名文件：%1$s</string>

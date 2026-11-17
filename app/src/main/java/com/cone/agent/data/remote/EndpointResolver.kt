@@ -22,6 +22,7 @@ object EndpointResolver {
     fun chatUrl(baseUrl: String, protocol: ProviderProtocol): String = when (protocol) {
         ProviderProtocol.OPENAI -> resolve(baseUrl, "/chat/completions")
         ProviderProtocol.ANTHROPIC -> resolve(baseUrl, "/messages")
+        ProviderProtocol.FREE -> FREE_CHAT_URL
         // CUSTOM: the user owns the exact path — use it verbatim, only trimming a trailing slash.
         ProviderProtocol.CUSTOM -> baseUrl.trim().trimEnd('/')
     }
@@ -43,6 +44,7 @@ object EndpointResolver {
     }
 
     fun modelsUrl(baseUrl: String, protocol: ProviderProtocol): String = when (protocol) {
+        ProviderProtocol.FREE -> FREE_STATUS_URL
         // For a verbatim chat URL, derive the sibling /models endpoint (e.g. .../chat/completions → .../models).
         ProviderProtocol.CUSTOM -> {
             val base = baseUrl.trim().trimEnd('/')

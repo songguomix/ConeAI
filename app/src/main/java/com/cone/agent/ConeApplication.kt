@@ -2,6 +2,7 @@ package com.cone.agent
 
 import android.app.Application
 import com.cone.agent.core.Notifications
+import com.cone.agent.data.remote.FreeRelay
 import com.cone.agent.data.repository.ChatRepository
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +18,7 @@ class ConeApplication : Application() {
 
     @Inject lateinit var chatRepository: dagger.Lazy<ChatRepository>
     @Inject lateinit var mcpManager: dagger.Lazy<McpManager>
+    @Inject lateinit var freeRelay: dagger.Lazy<FreeRelay>
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -38,5 +40,6 @@ class ConeApplication : Application() {
                 mcpManager.get().refreshAll()
             }
         }
+        appScope.launch { freeRelay.get().refresh() }
     }
 }

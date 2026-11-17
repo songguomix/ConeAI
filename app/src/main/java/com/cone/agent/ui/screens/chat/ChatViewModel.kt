@@ -16,9 +16,11 @@ import androidx.lifecycle.viewModelScope
 import com.cone.agent.agent.AgentController
 import com.cone.agent.agent.AgentRuntimeState
 import com.cone.agent.agent.ChatResponder
+import com.cone.agent.data.remote.FreeRelayException
 import com.cone.agent.data.remote.WebSearchClient
 import com.cone.agent.data.repository.ChatRepository
 import com.cone.agent.data.repository.ProviderRepository
+import com.cone.agent.data.repository.SelectedAgentModel
 import com.cone.agent.R
 import com.cone.agent.core.Constants
 import com.cone.agent.data.repository.SettingsRepository
@@ -43,8 +45,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
-
-data class SelectedLabel(val providerName: String, val modelId: String)
 
 /**
  * The three things this screen does. All three are pages of the same pager, sharing one drawer, one
@@ -172,13 +172,16 @@ class ChatViewModel @Inject constructor(
         providerRepository.allModels
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** The model the *current* mode actually uses (问答 → chat model, else agent model), for highlighting. */
-    val activeModel: StateFlow<com.cone.agent.data.repository.SelectedAgentModel?> = combine(
+    val conversationModel: StateFlow<SelectedAgentModel?> = settingsRepository.conversationModel
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** The model the current mode actually uses, for highlighting. */
+    val activeModel: StateFlow<SelectedAgentModel?> = combine(
         _mode,
         settingsRepository.selectedModel,
-        settingsRepository.chatModel,
-    ) { mode, agent, chat ->
-        if (mode == ChatMode.AGENT) agent else (chat ?: agent)
+        conversationModel,
+    ) { mode, agent, conversation ->
+        if (mode == ChatMode.AGENT) agent else conversation
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Switch the model for the current mode instantly (问答 sets the chat model, 智能体 the agent model). */
@@ -205,22 +208,6 @@ class ChatViewModel @Inject constructor(
             ChatMode.CODE -> 0
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
-    val selectedLabel: StateFlow<SelectedLabel?> =
-        combine(
-            _mode,
-            settingsRepository.selectedModel,
-            settingsRepository.chatModel,
-            providerRepository.providers,
-        ) { mode, agentModel, chatModel, providers ->
-            // Show the model the *current* mode actually uses: 问答 uses the chat model (falling back
-            // to the agent model when none is set separately); 智能体 always uses its vision model.
-            val sel = if (mode == ChatMode.AGENT) agentModel else (chatModel ?: agentModel)
-            if (sel == null) return@combine null
-            val name = providers.firstOrNull { it.id == sel.providerId }?.name
-                ?: com.cone.agent.core.LocaleHelper.string(context, R.string.unknown_provider)
-            SelectedLabel(name, sel.modelId)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val environment: StateFlow<EnvironmentStatus> = combine(
         bridge.connected,
@@ -400,7 +387,7 @@ class ChatViewModel @Inject constructor(
                 }
                 throw c
             } catch (e: Exception) {
-                if (builder.isEmpty()) {
+                if (builder.isEmpty() && (e as? FreeRelayException)?.canRetryNonStreaming != false) {
                     // Streaming unavailable/failed before any text — fall back to a normal answer.
                     chatResponder.answer(grounded.prompt, history, imageDataUrls = imageUrls, incognito = incognito, onAgentTask = agentHandoff)
                         .onSuccess {
@@ -411,7 +398,7 @@ class ChatViewModel @Inject constructor(
                         }
                 } else {
                     // Partial answer then an error — keep the partial text and note the failure.
-                    saveAnswer(grounded.sources)
+                    if (builder.isNotEmpty()) saveAnswer(grounded.sources)
                     saveError(com.cone.agent.core.LocaleHelper.string(context, R.string.ask_answer_failed, e.message ?: ""))
                 }
             } finally {

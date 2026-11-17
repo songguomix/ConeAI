@@ -18,9 +18,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.rememberNavController
+import com.cone.agent.data.remote.FreeRelay
 import com.cone.agent.data.repository.SettingsRepository
 import com.cone.agent.ui.SystemActions
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.cone.agent.ui.navigation.ConeNavHost
 import com.cone.agent.ui.theme.AppLocale
@@ -35,6 +41,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var installedAppsProvider: com.cone.agent.vision.InstalledAppsProvider
     @Inject lateinit var accessibilityBridge: com.cone.agent.vision.AccessibilityBridge
+    @Inject lateinit var freeRelay: FreeRelay
 
     override fun onResume() {
         super.onResume()
@@ -69,6 +76,14 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (isActive) {
+                    freeRelay.refresh()
+                    delay(30_000)
+                }
+            }
+        }
         enableEdgeToEdge()
         // Fully immersive navigation bar: drop the system's translucent contrast scrim so our own
         // surface shows continuously behind the (transparent) gesture/navigation bar.

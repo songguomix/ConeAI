@@ -54,12 +54,11 @@ class ChatResponder @Inject constructor(
 
     /**
      * The identity has to be pinned to the *actual* configured model: otherwise the underlying model
-     * answers "who are you" with its trained identity (e.g. "I'm Claude, made by Anthropic"), which is
-     * wrong here — the user brings their own model via Provider 管理.
+     * answers "who are you" with its trained identity even when a different model is selected.
      */
     private fun systemPrompt(modelId: String, dynamicSections: String) =
         """
-你是 ConeAI，运行在用户手机上的 AI 助手，底层模型是用户自行接入的 "$modelId"。请发挥该模型的全部能力，给出专业、深入、准确、实用的回答。
+你是 ConeAI，运行在用户手机上的 AI 助手，当前使用的模型是 "$modelId"。请发挥该模型的全部能力，给出专业、深入、准确、实用的回答。
 
 【身份】被问「你是谁 / 什么模型 / 谁开发的」时如实回答：你是 ConeAI，当前模型为 $modelId。不得谎称自己是 Claude、ChatGPT、Gemini、文心一言等，也不得编造与 $modelId 不符的开发方（如 Anthropic、OpenAI、Google）。
 
@@ -87,7 +86,7 @@ $dynamicSections
     /**
      * Answers [question], optionally using [history] for context and an attached [imageDataUrl]
      * (`data:image/...;base64,...`) for a vision question. Uses the dedicated 问答 model when set,
-     * otherwise falls back to the agent's model.
+     * otherwise falls back to the agent's model or the built-in free catalog.
      */
     /** A model answer plus the total tokens the provider reported (null if not provided). */
     data class Answer(val text: String, val totalTokens: Int?)
@@ -99,9 +98,8 @@ $dynamicSections
         incognito: Boolean = false,
         onAgentTask: (suspend (String) -> String)? = null,
     ): Result<Answer> {
-        val selected = settingsRepository.chatModel.first()
-            ?: settingsRepository.selectedModel.first()
-            ?: return Result.failure(IllegalStateException("尚未选择模型，请先在设置中选择一个模型。"))
+        val selected = settingsRepository.resolveConversationModel()
+            ?: return Result.failure(IllegalStateException(LocaleHelper.string(context, R.string.code_err_no_model)))
         val provider = providerRepository.resolve(selected.providerId)
             ?: return Result.failure(IllegalStateException("所选模型对应的 Provider 不存在。"))
 
@@ -161,9 +159,8 @@ $dynamicSections
         incognito: Boolean = false,
         onAgentTask: (suspend (String) -> String)? = null,
     ): Flow<ChatChunk> = flow {
-        val selected = settingsRepository.chatModel.first()
-            ?: settingsRepository.selectedModel.first()
-            ?: throw IllegalStateException("尚未选择模型，请先在设置中选择一个模型。")
+        val selected = settingsRepository.resolveConversationModel()
+            ?: throw IllegalStateException(LocaleHelper.string(context, R.string.code_err_no_model))
         val provider = providerRepository.resolve(selected.providerId)
             ?: throw IllegalStateException("所选模型对应的 Provider 不存在。")
         val (effQuestion, effImages) = resolveImages(question, imageDataUrls)

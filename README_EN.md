@@ -10,7 +10,7 @@ Two modes and an always-available voice capsule:
 - **Q&A**: Plain chat with any OpenAI-compatible model, with image/file attachments and one-click web search.
 - **Voice Assistant**: Long-press Power/Home or say the wake word **"Pine Cone / 松果 / Hey pine cone"** to pop the bottom capsule.
 
-> Bring your own model: any OpenAI-compatible endpoint, API Key stored encrypted on-device.
+> Use a built-in free model when available, or bring your own endpoint. Your API key is encrypted on the device.
 
 [中文文档](./README.md) | **English**
 
@@ -79,7 +79,9 @@ Two modes and an always-available voice capsule:
 
 ## Model System (Open Provider)
 
-- No hardcoded models. Add a Provider: name + Base URL + API Key
+- **ConeAI Free** appears in the model menu when the service is open, with no account or API key required. Q&A and coding use the first available free model if neither a Q&A nor an Agent model has been configured.
+- Provider management shows free service availability and this device’s weekly usage. Free requests go through the official relay.
+- Add your own provider with a name, base URL and API key.
 - Any OpenAI-style service: GPT / Claude / Gemini / DeepSeek / Qwen / Kimi / GLM / MiniMax / OpenRouter / Ollama / LM Studio / vLLM …
 - Auto-discover: `GET /models`
 - Freely choose any model as **Agent main model** or **Q&A model** (no vision-model restriction)
@@ -190,7 +192,7 @@ MODEL_URL=<url> ./setup.sh --no-build  # custom URL
 
 ### First-Time Setup (also guided in-app under "Permissions & Environment")
 
-1. Pick a model in "Models & Settings" (add a Provider first, then "Discover models")
+1. Pick an available model in the chat header. Choose a free model when offered, or add your own service in Provider management.
 2. Enable **Accessibility Service** (agent's hands)
 3. Allow **Draw over other apps** (floating controls / wake popup)
 4. Grant **Screen Capture** (agent's eyes)

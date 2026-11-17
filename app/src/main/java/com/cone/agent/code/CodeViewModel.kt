@@ -102,13 +102,9 @@ class CodeViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /**
-     * The model this screen will use. It follows 问答's model with the agent's as fallback — the same
-     * resolution [CodeAgent] performs — so the chip in the header can never disagree with what runs.
+     * The model this screen will use. It follows the same selection as 问答 and [CodeAgent].
      */
-    val activeModel: StateFlow<SelectedAgentModel?> = combine(
-        settingsRepository.chatModel,
-        settingsRepository.selectedModel,
-    ) { chat, agentModel -> chat ?: agentModel }
+    val activeModel: StateFlow<SelectedAgentModel?> = settingsRepository.conversationModel
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val modelId: StateFlow<String?> = activeModel
