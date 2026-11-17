@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +32,7 @@ import kotlinx.coroutines.launch
 import com.cone.agent.ui.navigation.ConeNavHost
 import com.cone.agent.ui.theme.AppLocale
 import com.cone.agent.ui.theme.ConeAgentTheme
+import com.cone.agent.vision.AccessibilityState
 import com.cone.agent.vision.ScreenCaptureService
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -40,18 +42,12 @@ class MainActivity : FragmentActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var installedAppsProvider: com.cone.agent.vision.InstalledAppsProvider
-    @Inject lateinit var accessibilityBridge: com.cone.agent.vision.AccessibilityBridge
+    @Inject lateinit var accessibilityState: AccessibilityState
     @Inject lateinit var freeRelay: FreeRelay
 
     override fun onResume() {
         super.onResume()
-        // 回到前台时静默自检一次：系统里开着却没连上，先尝试自己写回（ADB 授权设备立刻生效）。
-        // 写不进去也没关系——权限页的看门狗会把状态升级为“未响应”，并给出「重新开启」。
-        if (!accessibilityBridge.connected.value &&
-            com.cone.agent.vision.AccessibilityState.isEnabledInSettings(this)
-        ) {
-            com.cone.agent.vision.AccessibilityState.tryReenable(this)
-        }
+        accessibilityState.refresh()
     }
 
     private val screenCaptureLauncher =
@@ -124,9 +120,10 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun openAccessibilitySettings() {
-        runCatching {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        for (action in listOf(Settings.ACTION_ACCESSIBILITY_SETTINGS, Settings.ACTION_SETTINGS)) {
+            if (runCatching { startActivity(Intent(action)) }.isSuccess) return
         }
+        Toast.makeText(this, R.string.perm_a11y_enable, Toast.LENGTH_LONG).show()
     }
 
     private fun openOverlaySettings() {

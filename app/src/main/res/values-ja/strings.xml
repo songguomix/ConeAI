@@ -83,7 +83,7 @@
     <string name="env_fix">設定する</string>
     <string name="env_pick_model">モデルを選択</string>
     <string name="env_accessibility">アクセシビリティを有効化</string>
-    <string name="env_accessibility_restarting">ユーザー補助サービスを再起動中です。まもなく復帰します</string>
+    <string name="env_accessibility_connecting">ユーザー補助サービスの接続を待っています</string>
     <string name="env_overlay">オーバーレイを許可</string>
     <string name="env_capture">画面キャプチャを許可</string>
     <string name="model_hint_title">モデルが未選択です</string>
@@ -275,10 +275,10 @@
     <string name="perm_model_title">1. モデルを選択</string>
     <string name="perm_model_desc">エージェントの頭脳。メイン画面上部のモデル選択で選びます。</string>
     <string name="perm_a11y_title">2. ユーザー補助サービス</string>
-    <string name="perm_a11y_desc">エージェントの「手」。タップ・入力・スワイプや画面構造の読み取りに使います。</string>
-    <string name="perm_a11y_restarting">システム設定では有効済みで、再起動後の再バインド中です。そのままお待ちください。</string>
-    <string name="perm_a11y_stuck">アクセシビリティサービスが応答していません。「再度有効化」で修復してください。</string>
-    <string name="perm_reenable">再度有効化</string>
+    <string name="perm_a11y_desc">接続済みです。エージェントが画面を読み取り、タップ、文字入力、スワイプを実行できます。</string>
+    <string name="perm_a11y_enable">システムのユーザー補助設定で「ConeAI 自動化サービス」をオンにすると、エージェントが画面を読み取り、タップ、文字入力、スワイプを実行できます。</string>
+    <string name="perm_a11y_connecting">サービスはオンです。システムによる接続を待っています。</string>
+    <string name="perm_a11y_unbound">サービスはオンですが、接続できていません。システムのユーザー補助設定で「ConeAI 自動化サービス」を一度オフにしてから、もう一度オンにしてください。</string>
     <string name="perm_go_enable">有効にする</string>
     <string name="perm_overlay_title">3. オーバーレイ権限</string>
     <string name="perm_overlay_desc">ドラッグ可能なフローティング操作センターを表示し、いつでも一時停止／引き継ぎできます。</string>

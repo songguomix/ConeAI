@@ -83,7 +83,7 @@
     <string name="env_fix">Set up</string>
     <string name="env_pick_model">Choose a model</string>
     <string name="env_accessibility">Enable accessibility</string>
-    <string name="env_accessibility_restarting">Accessibility is restarting — it will be back in a moment</string>
+    <string name="env_accessibility_connecting">Waiting for Android to connect the accessibility service</string>
     <string name="env_overlay">Allow overlay</string>
     <string name="env_capture">Grant screen capture</string>
     <string name="model_hint_title">No model selected</string>
@@ -275,10 +275,10 @@
     <string name="perm_model_title">1. Choose a model</string>
     <string name="perm_model_desc">The agent\'s brain — pick one from the model chip at the top of the main screen.</string>
     <string name="perm_a11y_title">2. Accessibility service</string>
-    <string name="perm_a11y_desc">The agent\'s \"hands\" — used to tap, type, swipe and read the UI structure.</string>
-    <string name="perm_a11y_restarting">Already enabled in system settings; the service is rebinding after a restart. Wait a moment — no need to enable it again.</string>
-    <string name="perm_a11y_stuck">The accessibility service is enabled but not responding. Tap Re-enable to fix it.</string>
-    <string name="perm_reenable">Re-enable</string>
+    <string name="perm_a11y_desc">Connected. The agent can read the screen, tap, type and swipe.</string>
+    <string name="perm_a11y_enable">Turn on ConeAI Automation Service in Android accessibility settings to let the agent read the screen, tap, type and swipe.</string>
+    <string name="perm_a11y_connecting">The service is on. Waiting for Android to connect it.</string>
+    <string name="perm_a11y_unbound">The service is on and still disconnected. In Android accessibility settings, turn ConeAI Automation Service off and back on.</string>
     <string name="perm_go_enable">Enable</string>
     <string name="perm_overlay_title">3. Overlay permission</string>
     <string name="perm_overlay_desc">Shows a draggable floating control center so you can pause / take over anytime.</string>

@@ -11,82 +11,36 @@ import androidx.lifecycle.viewModelScope
 import com.cone.agent.core.Constants
 import com.cone.agent.data.repository.SettingsRepository
 import com.cone.agent.ui.screens.chat.EnvironmentStatus
-import com.cone.agent.vision.AccessibilityBridge
+import com.cone.agent.vision.AccessibilityState
 import com.cone.agent.vision.ScreenCaptureManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 @HiltViewModel
 class PermissionsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settingsRepository: SettingsRepository,
-    private val bridge: AccessibilityBridge,
+    accessibilityState: AccessibilityState,
     private val captureManager: ScreenCaptureManager,
 ) : ViewModel() {
 
     private val refreshTick = MutableStateFlow(0)
-    private val a11yStuck = MutableStateFlow(false)
-    private var lastRetryAt = 0L
-
-    init {
-        // 无障碍看门狗：系统里开着、但服务迟迟绑不回来（常见于崩溃循环或被停用后）时，
-        // 一直显示"重启中"会让人以为在正常等待。超过 6 秒就升级为"未响应"，给出重开入口。
-        viewModelScope.launch {
-            var waitingSince = 0L
-            while (true) {
-                delay(1000)
-                val connected = bridge.connected.value
-                val enabled = com.cone.agent.vision.AccessibilityState.isEnabledInSettings(context)
-                if (connected || !enabled) {
-                    waitingSince = 0L
-                    if (a11yStuck.value) a11yStuck.value = false
-                } else {
-                    if (waitingSince == 0L) waitingSince = System.currentTimeMillis()
-                    val stuck = System.currentTimeMillis() - waitingSince > 6000
-                    if (stuck) {
-                        // 静默修复每 15 秒重试一次：部分 ROM 要等系统扫完已启用列表才肯重新绑定。
-                        val nowMs = System.currentTimeMillis()
-                        if (nowMs - lastRetryAt > 15_000) {
-                            lastRetryAt = nowMs
-                            com.cone.agent.vision.AccessibilityState.tryReenable(context)
-                        }
-                        if (!a11yStuck.value) a11yStuck.value = true
-                    }
-                }
-            }
-        }
-    }
-
-    /** User pressed “重新开启”: try the silent fix first, then fall back to the system screen. */
-    fun reenableAccessibility() {
-        if (!com.cone.agent.vision.AccessibilityState.tryReenable(context)) {
-            // Retail devices cannot write the secure setting; the caller opens system settings.
-        }
-        refresh()
-    }
 
     val environment: StateFlow<EnvironmentStatus> = combine(
-        bridge.connected,
+        accessibilityState.status,
         captureManager.running,
         settingsRepository.selectedModel,
-        combine(refreshTick, a11yStuck) { tick, stuck -> tick to stuck },
-    ) { accessibility, capture, model, tickAndStuck ->
+        refreshTick,
+    ) { accessibility, capture, model, _ ->
         EnvironmentStatus(
             modelReady = model != null,
-            accessibilityReady = accessibility,
-            // 系统里开着但服务还没绑回来 = 重启中（见 AccessibilityState）
-            accessibilityRestarting = !accessibility &&
-                com.cone.agent.vision.AccessibilityState.isEnabledInSettings(context) &&
-                !tickAndStuck.second,
-            accessibilityStuck = !accessibility && tickAndStuck.second,
+            accessibilityStatus = accessibility,
             overlayReady = canDrawOverlays(),
             captureReady = capture,
             notificationsReady = notificationsGranted(),

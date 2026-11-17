@@ -84,7 +84,7 @@
     <string name="env_fix">去准备</string>
     <string name="env_pick_model">选择模型</string>
     <string name="env_accessibility">开启无障碍服务</string>
-    <string name="env_accessibility_restarting">无障碍服务正在重启，稍等片刻即可</string>
+    <string name="env_accessibility_connecting">等待系统连接无障碍服务</string>
     <string name="env_overlay">允许悬浮窗</string>
     <string name="env_capture">授权屏幕捕获</string>
     <string name="model_hint_title">还没有选择模型</string>
@@ -276,10 +276,10 @@
     <string name="perm_model_title">1. 选择模型</string>
     <string name="perm_model_desc">Agent 的大脑：在主界面顶部「选择模型」中挑一个。</string>
     <string name="perm_a11y_title">2. 无障碍服务</string>
-    <string name="perm_a11y_desc">Agent 的“手”，用于点击、输入、滑动并读取界面结构。</string>
-    <string name="perm_a11y_restarting">系统设置里已开启，服务正在重启绑定，稍等片刻即可恢复，无需重复开启。</string>
-    <string name="perm_a11y_stuck">无障碍服务没有响应（系统里开着但没连上），点「重新开启」修一下。</string>
-    <string name="perm_reenable">重新开启</string>
+    <string name="perm_a11y_desc">服务已连接，智能体可以读取界面、点击、输入和滑动。</string>
+    <string name="perm_a11y_enable">在系统无障碍设置中开启「ConeAI 自动化服务」，以允许智能体读取界面、点击、输入和滑动。</string>
+    <string name="perm_a11y_connecting">服务已开启，正在等待系统连接。</string>
+    <string name="perm_a11y_unbound">服务已开启但尚未连接。请在系统无障碍设置中关闭「ConeAI 自动化服务」，再重新开启。</string>
     <string name="perm_go_enable">前往开启</string>
     <string name="perm_overlay_title">3. 悬浮窗权限</string>
     <string name="perm_overlay_desc">用于显示可拖动的悬浮控制中心，便于随时暂停 / 接管。</string>

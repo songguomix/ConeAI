@@ -103,7 +103,7 @@
         <!-- Accessibility service: the "hands" of the agent (gestures, UI tree). -->
         <service
             android:name=".vision.ConeAccessibilityService"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/accessibility_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

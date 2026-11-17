@@ -168,6 +168,7 @@ import com.cone.agent.ui.components.MessageBubble
 import com.cone.agent.ui.components.ModelSwitcher
 import com.cone.agent.ui.components.humanAction
 import com.cone.agent.ui.theme.ConeShapes
+import com.cone.agent.vision.AccessibilityStatus
 import java.io.File
 import java.util.Calendar
 import kotlinx.coroutines.delay
@@ -1556,14 +1557,11 @@ private fun ConfirmCard(
 private fun EnvironmentBanner(environment: EnvironmentStatus, onFix: () -> Unit) {
     val missing = buildList {
         if (!environment.modelReady) add(stringResource(R.string.env_pick_model))
-        if (!environment.accessibilityReady) {
-            add(
-                if (environment.accessibilityRestarting) {
-                    stringResource(R.string.env_accessibility_restarting)
-                } else {
-                    stringResource(R.string.env_accessibility)
-                },
-            )
+        when (environment.accessibilityStatus) {
+            AccessibilityStatus.Disabled -> add(stringResource(R.string.env_accessibility))
+            AccessibilityStatus.Connecting -> add(stringResource(R.string.env_accessibility_connecting))
+            AccessibilityStatus.Unbound -> add(stringResource(R.string.perm_a11y_unbound))
+            AccessibilityStatus.Connected -> Unit
         }
         if (!environment.overlayReady) add(stringResource(R.string.env_overlay))
         if (!environment.captureReady) add(stringResource(R.string.env_capture))

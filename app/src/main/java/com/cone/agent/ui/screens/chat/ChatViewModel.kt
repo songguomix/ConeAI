@@ -28,8 +28,8 @@ import com.cone.agent.domain.model.ConversationMode
 import com.cone.agent.domain.model.ConversationSummary
 import com.cone.agent.domain.model.Sender
 import com.cone.agent.domain.model.UiMessage
-import com.cone.agent.vision.AccessibilityBridge
 import com.cone.agent.vision.AccessibilityState
+import com.cone.agent.vision.AccessibilityStatus
 import com.cone.agent.vision.ImageUtils
 import com.cone.agent.vision.ScreenCaptureManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -54,11 +54,7 @@ enum class ChatMode { AGENT, ASK, CODE }
 
 data class EnvironmentStatus(
     val modelReady: Boolean = false,
-    val accessibilityReady: Boolean = false,
-    /** 系统设置里无障碍是开着的，但服务还没重新绑定上（重启/恢复中，等一会儿即可）。 */
-    val accessibilityRestarting: Boolean = false,
-    /** Enabled in settings but still not bound after a while — the service is wedged. */
-    val accessibilityStuck: Boolean = false,
+    val accessibilityStatus: AccessibilityStatus = AccessibilityStatus.Disabled,
     val overlayReady: Boolean = false,
     val captureReady: Boolean = false,
     val notificationsReady: Boolean = true,
@@ -66,6 +62,8 @@ data class EnvironmentStatus(
     val assistantReady: Boolean = false,
     val appListReady: Boolean = true,
 ) {
+    val accessibilityReady: Boolean get() = accessibilityStatus == AccessibilityStatus.Connected
+
     /**
      * 起步只要求选好模型。屏幕捕获/无障碍/悬浮窗不再是硬门槛：简单的接口直达任务（打开应用、
      * 导航、播放、打电话…）不依赖屏幕能力，智能体在运行时按已授权的能力自适应（提示词会告知
@@ -87,7 +85,7 @@ class ChatViewModel @Inject constructor(
     private val chatResponder: ChatResponder,
     private val providerRepository: ProviderRepository,
     private val settingsRepository: SettingsRepository,
-    private val bridge: AccessibilityBridge,
+    accessibilityState: AccessibilityState,
     private val captureManager: ScreenCaptureManager,
     private val webSearchClient: WebSearchClient,
     private val savedStateHandle: SavedStateHandle,
@@ -210,16 +208,14 @@ class ChatViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val environment: StateFlow<EnvironmentStatus> = combine(
-        bridge.connected,
+        accessibilityState.status,
         captureManager.running,
         settingsRepository.selectedModel,
         refreshTick,
     ) { accessibility, capture, model, _ ->
         EnvironmentStatus(
             modelReady = model != null,
-            accessibilityReady = accessibility,
-            // 系统里开着但服务还没绑回来 = 重启中（见 AccessibilityState）
-            accessibilityRestarting = !accessibility && AccessibilityState.isEnabledInSettings(context),
+            accessibilityStatus = accessibility,
             overlayReady = canDrawOverlays(),
             captureReady = capture,
             notificationsReady = notificationsGranted(),

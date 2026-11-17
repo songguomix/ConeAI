@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cone.agent.R
 import com.cone.agent.ui.SystemActions
 import com.cone.agent.ui.theme.ConeShapes
+import com.cone.agent.vision.AccessibilityStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,21 +108,21 @@ fun PermissionsScreen(
             PermissionItem(
                 title = stringResource(R.string.perm_a11y_title),
                 description = stringResource(
-                    when {
-                        env.accessibilityStuck -> R.string.perm_a11y_stuck
-                        env.accessibilityRestarting -> R.string.perm_a11y_restarting
-                        else -> R.string.perm_a11y_desc
+                    when (env.accessibilityStatus) {
+                        AccessibilityStatus.Disabled -> R.string.perm_a11y_enable
+                        AccessibilityStatus.Connecting -> R.string.perm_a11y_connecting
+                        AccessibilityStatus.Unbound -> R.string.perm_a11y_unbound
+                        AccessibilityStatus.Connected -> R.string.perm_a11y_desc
                     },
                 ),
                 granted = env.accessibilityReady,
-                actionLabel = stringResource(
-                    if (env.accessibilityStuck) R.string.perm_reenable else R.string.perm_go_enable,
-                ),
-                onAction = {
-                    // 先试静默修复（ADB 授权设备直接生效）；零售机打不开设置项，就带用户去系统页。
-                    viewModel.reenableAccessibility()
-                    systemActions.openAccessibilitySettings()
+                statusDescription = null, // The description already announces the exact service state.
+                actionLabel = when (env.accessibilityStatus) {
+                    AccessibilityStatus.Disabled -> stringResource(R.string.perm_go_enable)
+                    AccessibilityStatus.Unbound -> stringResource(R.string.perm_go_settings)
+                    else -> null
                 },
+                onAction = systemActions.openAccessibilitySettings,
             )
             PermissionItem(
                 title = stringResource(R.string.perm_overlay_title),
@@ -228,15 +229,16 @@ private fun PermissionItem(
     granted: Boolean,
     actionLabel: String?,
     onAction: () -> Unit,
+    statusDescription: String? = stringResource(
+        if (granted) R.string.perm_status_granted else R.string.perm_status_missing,
+    ),
 ) {
     Card(shape = ConeShapes.Card, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Icon(
                     imageVector = if (granted) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                    contentDescription = stringResource(
-                        if (granted) R.string.perm_status_granted else R.string.perm_status_missing,
-                    ),
+                    contentDescription = statusDescription,
                     // 之前这里是硬编码的 0xFF2E7D32 绿色，和动态取色 / 深色模式都对不上；
                     // 改成主题的 primary，跟随壁纸与明暗切换。
                     tint = if (granted) {
