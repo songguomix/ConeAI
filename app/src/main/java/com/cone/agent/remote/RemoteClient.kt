@@ -126,6 +126,7 @@ class RemoteClient(
     // Never trust a self-reported snapshot ID to select a saved UU device. A verified LAN pin
     // survives address changes; unpinned origins/credentials intentionally require their own binding.
     val computerIdentity: String = remoteBindingIdentity(endpoint)
+    private val requestKey = UUID.randomUUID().toString()
 
     // SSE is a long-lived stream kept alive by 25s server pings; disable the read timeout so a quiet
     // (idle) session is not torn down. Reuses the shared connection pool / dispatcher.
@@ -194,6 +195,7 @@ class RemoteClient(
             .header("Accept", "text/event-stream")
             .header("Cache-Control", "no-cache")
             .header(HEADER_TOKEN, endpoint.token)
+            .header("X-Remote-Client", requestKey)
             .apply { endpoint.password?.let { header("x-remote-pass", it) } }
             .build()
         val call: Call = streamClient.newCall(request)
@@ -317,6 +319,7 @@ class RemoteClient(
             .url(endpoint.cmdUrl())
             .post(json.toRequestBody("application/json; charset=utf-8".toMediaType()))
             .header(HEADER_TOKEN, endpoint.token)
+            .header("X-Remote-Client", requestKey)
             .apply { endpoint.password?.let { header("x-remote-pass", it) } }
             .build()
         runCatching { commandClient.newCall(request).execute().use { it.isSuccessful } }.getOrDefault(false)

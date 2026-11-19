@@ -25,14 +25,17 @@ data class RemoteFrame(
 @Serializable
 data class RemoteSnapshot(
     val conversations: List<RemoteConversation> = emptyList(),
+    val archivedConversations: List<RemoteConversation> = emptyList(),
     val runningConversationId: String? = null,
     val activeConversationId: String? = null,
     val messages: List<RemoteMessage> = emptyList(),
+    val hasOlderMessages: Boolean = false,
     val isStreaming: Boolean = false,
     val streamingContent: String? = null,
     val streamingReasoningContent: String? = null,
     val streamingStatus: String? = null,
     val streamingToolName: String? = null,
+    val streamingRetry: RemoteStreamRetry? = null,
     val todos: List<RemoteTodo> = emptyList(),
     val changes: List<RemoteChange> = emptyList(),
     val model: RemoteModel? = null,
@@ -42,7 +45,8 @@ data class RemoteSnapshot(
     val theme: String? = null,
     /** The open project root, where the phone's file browser starts. Null if no folder is open. */
     val rootPath: String? = null,
-    /** Reasoning effort: "low" | "medium" | "high". */
+    val workspaceRoots: List<String> = emptyList(),
+    /** Reasoning effort: "auto" | "low" | "medium" | "high". */
     val reasoningEffort: String? = null,
     val capabilities: List<String> = emptyList(),
     val computerId: String? = null,
@@ -51,6 +55,12 @@ data class RemoteSnapshot(
     val rsi: RemoteRsiState? = null,
     val question: RemoteQuestion? = null,
     val error: String? = null,
+    val installLabel: String? = null,
+    val isEditingMessage: Boolean = false,
+    val canContinue: Boolean = false,
+    val planMessageId: String? = null,
+    val goal: RemoteConversationGoal? = null,
+    val slashCommands: List<RemoteSlashCommand> = emptyList(),
     val agentMode: String = "standard",
     val planMode: Boolean = false,
     val reviewMode: Boolean = false,
@@ -58,7 +68,51 @@ data class RemoteSnapshot(
 )
 
 @Serializable
-data class RemoteQueuedMessage(val id: String = "", val content: String = "")
+data class RemoteQueuedMessage(
+    val id: String = "",
+    val content: String = "",
+    val steer: Boolean = false,
+    val steerError: String? = null,
+    val imageCount: Int = 0,
+)
+
+@Serializable
+data class RemoteStreamRetry(val attempt: Int = 0, val max: Int? = null)
+
+@Serializable
+data class RemoteConversationGoal(
+    val text: String = "",
+    val status: String = "",
+    val elapsedMs: Long? = null,
+    val runningSince: Long? = null,
+)
+
+@Serializable
+data class RemoteSlashCommand(val name: String = "", val description: String = "")
+
+@Serializable
+data class RemoteHistoryPage(
+    val messages: List<RemoteMessage> = emptyList(),
+    val hasOlderMessages: Boolean = false,
+)
+
+@Serializable
+data class RemoteHandoff(
+    val ok: Boolean = false,
+    val filename: String = "",
+    val markdown: String = "",
+    val error: String? = null,
+)
+
+@Serializable
+data class RemoteCheckpointPreview(
+    val ok: Boolean = false,
+    val revision: String = "",
+    val files: List<String> = emptyList(),
+    val fileCount: Int = 0,
+    val retainedEffects: Int = 0,
+    val messageCount: Int = 0,
+)
 
 /** One directory entry from a `listDir` reply. */
 @Serializable
@@ -82,6 +136,8 @@ data class RemoteConversation(
     val title: String? = null,
     val isRunning: Boolean = false,
     val changedFiles: List<String> = emptyList(),
+    val archived: Boolean = false,
+    val rootPath: String? = null,
 )
 
 @Serializable
@@ -135,6 +191,13 @@ data class RemoteMessage(
     val thinkingTime: Long? = null,
     /** Total tokens used for this reply, if the provider reported usage. */
     val tokensUsed: Int? = null,
+    val promptTokens: Int? = null,
+    val completionTokens: Int? = null,
+    val cacheHitTokens: Int? = null,
+    val modelId: String? = null,
+    val providerId: String? = null,
+    val createdAt: Long? = null,
+    val imageCount: Int = 0,
 )
 
 @Serializable
@@ -183,6 +246,13 @@ sealed class RemoteCommand(val type: String) {
     data class SetReviewMode(val value: Boolean) : RemoteCommand("setReviewMode")
     data class EnqueueMessage(val text: String) : RemoteCommand("enqueueMessage")
     data class DequeueMessage(val id: String) : RemoteCommand("dequeueMessage")
+    data class SteerQueuedMessage(val conversationId: String, val id: String) : RemoteCommand("steerQueuedMessage")
+    data class SetConversationArchived(val id: String, val archived: Boolean) : RemoteCommand("setConversationArchived")
+    data class ContinueConversation(val conversationId: String) : RemoteCommand("continueConversation")
+    data class CompactConversation(val conversationId: String) : RemoteCommand("compactConversation")
+    data class ClearConversationError(val conversationId: String?) : RemoteCommand("clearConversationError")
+    data class ApproveConversationPlan(val conversationId: String, val id: String) : RemoteCommand("approveConversationPlan")
+    data class ConversationGoal(val conversationId: String, val action: String, val text: String? = null) : RemoteCommand("conversationGoal")
     data class Send(val text: String) : RemoteCommand("send")
     object Stop : RemoteCommand("stop")
     data class SwitchConversation(val id: String) : RemoteCommand("switchConversation")
@@ -208,6 +278,26 @@ sealed class RemoteCommand(val type: String) {
             is SetReviewMode -> put("value", JsonPrimitive(value))
             is EnqueueMessage -> put("text", JsonPrimitive(text))
             is DequeueMessage -> put("id", JsonPrimitive(id))
+            is SteerQueuedMessage -> {
+                put("conversationId", JsonPrimitive(conversationId))
+                put("id", JsonPrimitive(id))
+            }
+            is SetConversationArchived -> {
+                put("id", JsonPrimitive(id))
+                put("archived", JsonPrimitive(archived))
+            }
+            is ContinueConversation -> put("conversationId", JsonPrimitive(conversationId))
+            is CompactConversation -> put("conversationId", JsonPrimitive(conversationId))
+            is ClearConversationError -> put("conversationId", JsonPrimitive(conversationId))
+            is ApproveConversationPlan -> {
+                put("conversationId", JsonPrimitive(conversationId))
+                put("id", JsonPrimitive(id))
+            }
+            is ConversationGoal -> {
+                put("conversationId", JsonPrimitive(conversationId))
+                put("action", JsonPrimitive(action))
+                text?.let { put("text", JsonPrimitive(it)) }
+            }
             is Send -> put("text", JsonPrimitive(text))
             is SwitchConversation -> put("id", JsonPrimitive(id))
             is DeleteConversation -> put("id", JsonPrimitive(id))

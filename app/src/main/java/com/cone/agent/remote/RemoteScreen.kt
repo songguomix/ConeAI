@@ -71,6 +71,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
@@ -89,6 +91,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.key
@@ -179,7 +182,7 @@ private val LightPalette = RemotePalette(
 internal val LocalRemotePalette = staticCompositionLocalOf { DarkPalette }
 
 /** Which mirror surface is showing: the chat, the file browser, or the terminal. */
-internal enum class RemoteTab { CHAT, CHANGES, FILES, TERMINAL, SCREEN }
+internal enum class RemoteTab { CHAT, CHANGES, FILES, TERMINAL, SCREEN, MORE }
 
 /**
  * ConeAI sidebar entry that turns the phone into a remote control for a ConeCode desktop session.
@@ -501,6 +504,7 @@ private fun MirrorScreen(state: RemoteUiState, viewModel: RemoteViewModel, onOpe
             selectedId = snap.model?.id,
             selectedProviderId = snap.model?.providerId,
             reasoningEffort = snap.reasoningEffort,
+            showAutoEffort = "conversationActions" in snap.capabilities,
             onPick = { id, providerId -> viewModel.setModel(id, providerId); showModelPicker = false },
             onSetEffort = { viewModel.setReasoningEffort(it) },
             onDismiss = { showModelPicker = false },
@@ -536,6 +540,7 @@ private fun conversationTitle(snapshot: RemoteSnapshot): String =
         ?: "ConeCode"
 
 internal fun RemoteTab.icon(): ImageVector = when (this) {
+    RemoteTab.MORE -> Icons.Filled.MoreHoriz
     RemoteTab.SCREEN -> Icons.Filled.Computer
     RemoteTab.CHAT -> Icons.Filled.ChatBubbleOutline
     RemoteTab.CHANGES -> Icons.Filled.Difference
@@ -544,6 +549,7 @@ internal fun RemoteTab.icon(): ImageVector = when (this) {
 }
 
 internal fun RemoteTab.labelRes(): Int = when (this) {
+    RemoteTab.MORE -> R.string.remote_more
     RemoteTab.SCREEN -> R.string.remote_desktop
     RemoteTab.CHAT -> R.string.remote_tab_chat
     RemoteTab.CHANGES -> R.string.remote_changes
@@ -557,24 +563,29 @@ internal fun RemoteConversationPane(
     snapshot: RemoteSnapshot, viewModel: RemoteViewModel, modifier: Modifier = Modifier,
     showWorkControls: Boolean = true, showComposer: Boolean = true, showPanels: Boolean = true,
 ) {
-    val cx = LocalRemotePalette.current
+    val conversationActions = "conversationActions" in snapshot.capabilities
     Column(modifier = modifier.fillMaxSize()) {
         if (showWorkControls) RemoteWorkModes(snapshot, viewModel)
         key(snapshot.activeConversationId) { MessageList(snapshot = snapshot, viewModel = viewModel, modifier = Modifier.weight(1f)) }
         if (showPanels) Panels(snapshot = snapshot, viewModel = viewModel)
         RemoteQueue(snapshot, viewModel)
-        snapshot.error?.takeIf { it.isNotBlank() }?.let {
-            Text(it, color = cx.danger, style = RemoteType.bodySmall,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 96.dp).verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp))
+        RemoteConversationStatus(snapshot, viewModel)
+        if (showComposer) key(snapshot.activeConversationId) {
+            Composer(
+                viewModel = viewModel,
+                snapshot = snapshot,
+                onSend = { text, images ->
+                    val queue = snapshot.isStreaming && "queue" in snapshot.capabilities
+                    if (conversationActions) {
+                        viewModel.submitConversationMessage(snapshot.activeConversationId, text, images, queue)
+                    } else {
+                        if (queue) viewModel.enqueueMessage(text) else viewModel.sendMessage(text)
+                        true
+                    }
+                },
+                onStop = viewModel::stopGeneration,
+            )
         }
-        if (showComposer) Composer(
-            viewModel = viewModel,
-            rootPath = snapshot.rootPath,
-            isStreaming = snapshot.isStreaming,
-            canQueue = "queue" in snapshot.capabilities,
-            onSend = { if (snapshot.isStreaming && "queue" in snapshot.capabilities) viewModel.enqueueMessage(it) else viewModel.sendMessage(it) },
-            onStop = viewModel::stopGeneration,
-        )
     }
 }
 
@@ -587,36 +598,39 @@ private fun RemoteTabContent(
     modifier: Modifier = Modifier,
     twoPane: Boolean = false,
     terminal: TerminalSession,
+    onReviewStarted: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
-    var selectedFile by remember(snapshot.rootPath) { mutableStateOf<String?>(null) }
     Box(modifier = modifier.fillMaxSize()) {
         when (tab) {
-            RemoteTab.SCREEN -> UuRemoteScreen(viewModel)
+            RemoteTab.SCREEN, RemoteTab.MORE -> Unit // Dedicated surfaces in ConeCodeShell.
             RemoteTab.CHAT -> RemoteWorkScreen(snapshot, viewModel)
             RemoteTab.CHANGES -> ChangesPage(snapshot, viewModel)
-            RemoteTab.FILES -> Row(modifier = Modifier.fillMaxSize()) {
-                if (twoPane) {
-                    FileBrowser(
-                        viewModel = viewModel,
-                        rootPath = snapshot.rootPath,
-                        modifier = Modifier.width(300.dp).fillMaxHeight(),
-                        onPick = { selectedFile = it },
-                    )
-                    VerticalDivider(color = cx.border)
-                    val file = selectedFile
-                    if (file != null) {
-                        FileViewer(
+            RemoteTab.FILES -> RemoteWorkspace(snapshot, viewModel, onReviewStarted) { root, enhanced ->
+                var selectedFile by remember(root) { mutableStateOf<String?>(null) }
+                Row(modifier = Modifier.fillMaxSize()) {
+                    if (twoPane) {
+                        FileBrowser(
                             viewModel = viewModel,
-                            path = file,
-                            onBack = { selectedFile = null },
-                            modifier = Modifier.weight(1f),
+                            rootPath = root,
+                            modifier = Modifier.width(300.dp).fillMaxHeight(),
+                            onPick = { selectedFile = it },
+                            enhanced = enhanced,
+                            onRemove = { deleted ->
+                                if (selectedFile == deleted || selectedFile?.startsWith("$deleted/") == true ||
+                                    selectedFile?.startsWith("$deleted\\") == true) selectedFile = null
+                            },
                         )
+                        VerticalDivider(color = cx.border)
+                        val file = selectedFile
+                        if (file != null) {
+                            FileViewer(viewModel, file, { selectedFile = null }, Modifier.weight(1f), enhanced)
+                        } else {
+                            FilePanePlaceholder(Modifier.weight(1f))
+                        }
                     } else {
-                        FilePanePlaceholder(Modifier.weight(1f))
+                        FileBrowser(viewModel, root, Modifier.fillMaxSize(), enhanced = enhanced)
                     }
-                } else {
-                    FileBrowser(viewModel, snapshot.rootPath, Modifier.fillMaxSize())
                 }
             }
             RemoteTab.TERMINAL -> TerminalView(viewModel, snapshot.rootPath, terminal, Modifier.fillMaxSize())
@@ -662,15 +676,20 @@ private fun ConeCodeShell(
     var sidebarVisible by rememberSaveable { mutableStateOf(true) }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    BackHandler(enabled = tab == RemoteTab.MORE && !drawer.isOpen) { onTab(RemoteTab.CHAT) }
     BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
 
     val sidebar: @Composable () -> Unit = {
         ConversationSidebar(
-            snapshot = snapshot.copy(conversations = snapshot.conversations.filter { it.viewMode == destination.wireValue }), endpointLabel = state.endpointLabel,
+            snapshot = snapshot.copy(
+                conversations = snapshot.conversations.filter { it.viewMode == destination.wireValue },
+                archivedConversations = snapshot.archivedConversations.filter { it.viewMode == destination.wireValue },
+            ), endpointLabel = state.endpointLabel,
             destination = destination, onDestination = onDestination,
             onNew = { viewModel.newConversation(); onTab(RemoteTab.CHAT); scope.launch { drawer.close() } },
             onSwitch = { viewModel.switchConversation(it); onTab(RemoteTab.CHAT); scope.launch { drawer.close() } },
             onDelete = viewModel::deleteConversation, onRename = viewModel::renameConversation,
+            onArchive = viewModel::setConversationArchived,
             onDisconnect = viewModel::disconnect,
             onOpenComputers = { scope.launch { drawer.close() }; onOpenComputers() },
         )
@@ -703,15 +722,18 @@ private fun ConeCodeShell(
                     connected = state.phase == RemotePhase.CONNECTED, insecure = state.insecure,
                     tab = tab, changeCount = snapshot.changes.count { it.status == "pending" }, onTab = onTab,
                     onMenu = if (rail || hingeLeft != null) null else onMenu, onPickModel = onPickModel,
-                    showWorkbenchTabs = destination == RemoteView.WORK,
+                    showWorkbenchTabs = destination == RemoteView.WORK || tab in setOf(RemoteTab.FILES, RemoteTab.TERMINAL, RemoteTab.CHANGES),
                     onScreen = { onTab(if (tab == RemoteTab.SCREEN) RemoteTab.CHAT else RemoteTab.SCREEN) },
+                    onMore = { onTab(if (tab == RemoteTab.MORE) RemoteTab.CHAT else RemoteTab.MORE) },
                 )
                 when {
                     tab == RemoteTab.SCREEN -> UuRemoteScreen(viewModel)
-                    destination == RemoteView.CHAT -> RemoteChatScreen(snapshot, viewModel, Modifier.weight(1f))
+                    tab == RemoteTab.MORE -> RemoteFeatures(viewModel, snapshot, onTab)
+                    tab != RemoteTab.CHAT || destination == RemoteView.WORK -> RemoteTabContent(tab, snapshot, viewModel, Modifier.weight(1f),
+                        twoPane = twoPane && !rail && hingeLeft == null, terminal = terminal,
+                        onReviewStarted = { onTab(RemoteTab.CHAT) })
                     destination == RemoteView.RSI -> RemoteRsiScreen(snapshot, viewModel, Modifier.weight(1f))
-                    else -> RemoteTabContent(tab, snapshot, viewModel, Modifier.weight(1f),
-                        twoPane = twoPane && !rail && hingeLeft == null, terminal = terminal)
+                    else -> RemoteChatScreen(snapshot, viewModel, Modifier.weight(1f))
                 }
             }
         }
@@ -769,6 +791,7 @@ private fun ConversationSidebar(
     onNew: () -> Unit,
     onDelete: (String) -> Unit,
     onRename: (String, String) -> Unit,
+    onArchive: (String, Boolean) -> Unit,
     onDisconnect: () -> Unit,
     onOpenComputers: () -> Unit,
     modifier: Modifier = Modifier,
@@ -826,6 +849,7 @@ private fun ConversationSidebar(
             onSwitch = onSwitch,
             onDelete = onDelete,
             onRename = onRename,
+            onArchive = onArchive,
             modifier = Modifier.weight(1f),
         )
         RemoteViewNavigation(destination, compact = false, onSelect = onDestination)
@@ -873,15 +897,24 @@ private fun ConversationList(
     onSwitch: (String) -> Unit,
     onDelete: (String) -> Unit,
     onRename: (String, String) -> Unit,
+    onArchive: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cx = LocalRemotePalette.current
     var pendingDelete by remember { mutableStateOf<RemoteConversation?>(null) }
     var renaming by remember { mutableStateOf<RemoteConversation?>(null) }
+    var showArchived by rememberSaveable { mutableStateOf(false) }
+    val canArchive = "conversationActions" in snapshot.capabilities
+    val conversations = if (showArchived && canArchive) snapshot.archivedConversations else snapshot.conversations
     renaming?.let { item -> RemoteRenameDialog(item.title.orEmpty(), { onRename(item.id, it) }, { renaming = null }) }
     Column(modifier = modifier) {
+        if (canArchive && (snapshot.archivedConversations.isNotEmpty() || showArchived)) {
+            TextButton(onClick = { showArchived = !showArchived }) {
+                Text(stringResource(if (showArchived) R.string.remote_active_conversations else R.string.remote_archived_conversations), color = cx.accent)
+            }
+        }
         LazyColumn(modifier = Modifier.weight(1f)) {
-            items(snapshot.conversations, key = { it.id }) { conv ->
+            items(conversations, key = { it.id }) { conv ->
                 val active = conv.id == snapshot.activeConversationId
                 val running = conv.isRunning || conv.id == snapshot.runningConversationId
                 Row(
@@ -890,7 +923,7 @@ private fun ConversationList(
                         .padding(vertical = 1.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (active) cx.bg3 else Color.Transparent)
-                        .clickable { onSwitch(conv.id) }
+                        .clickable(enabled = !conv.archived) { onSwitch(conv.id) }
                         .padding(start = 9.dp, end = 2.dp, top = 7.dp, bottom = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -934,16 +967,31 @@ private fun ConversationList(
                             )
                         }
                     }
-                    if ("renameConversation" in snapshot.capabilities) IconButton(onClick = { renaming = conv }, modifier = Modifier.size(40.dp)) {
-                        Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.remote_rename), tint = cx.faint, modifier = Modifier.size(15.dp))
-                    }
-                    IconButton(onClick = { pendingDelete = conv }, modifier = Modifier.size(40.dp)) {
-                        Icon(
-                            Icons.Filled.DeleteOutline,
-                            contentDescription = stringResource(R.string.cd_delete),
-                            tint = cx.faint,
-                            modifier = Modifier.size(15.dp),
-                        )
+                    var showActions by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { showActions = true }, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Filled.MoreHoriz, stringResource(R.string.remote_conversation_actions), tint = cx.muted)
+                        }
+                        RemoteDropdownMenu(showActions, { showActions = false }, containerColor = cx.bg2) {
+                            if ("renameConversation" in snapshot.capabilities) {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.remote_rename)) }, onClick = {
+                                    showActions = false
+                                    renaming = conv
+                                })
+                            }
+                            if (canArchive) DropdownMenuItem(
+                                text = { Text(stringResource(if (conv.archived) R.string.remote_restore_conversation else R.string.remote_archive_conversation)) },
+                                enabled = !running,
+                                onClick = {
+                                    showActions = false
+                                    onArchive(conv.id, !conv.archived)
+                                },
+                            )
+                            DropdownMenuItem(text = { Text(stringResource(R.string.cd_delete)) }, onClick = {
+                                showActions = false
+                                pendingDelete = conv
+                            })
+                        }
                     }
                 }
             }
@@ -1005,7 +1053,7 @@ private fun ChangesPage(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
             ) {
                 items(history, key = { it.id.ifBlank { it.filePath + it.status } }) { change ->
-                    ChangeHistoryCard(change)
+                    ChangeHistoryCard(change, viewModel, "changeDetail" in snapshot.capabilities)
                 }
             }
         } else {
@@ -1016,8 +1064,10 @@ private fun ChangesPage(
 
 /** 已处理的变更（只读，带状态）。 */
 @Composable
-private fun ChangeHistoryCard(change: RemoteChange) {
+private fun ChangeHistoryCard(change: RemoteChange, viewModel: RemoteViewModel, canShowDetails: Boolean) {
     val cx = LocalRemotePalette.current
+    var showDetails by remember(change.id) { mutableStateOf(false) }
+    if (showDetails) RemoteChangeDetail(change, viewModel) { showDetails = false }
     val isCommand = change.filePath == "[Command]"
     val label = if (isCommand) change.newCode.orEmpty() else fileName(change.filePath)
     val kind = if (change.kind == "exec") "Run" else (change.kind ?: "edit")
@@ -1039,6 +1089,7 @@ private fun ChangeHistoryCard(change: RemoteChange) {
             .clip(RoundedCornerShape(10.dp))
             .background(cx.bg2)
             .border(1.dp, cx.border, RoundedCornerShape(10.dp))
+            .clickable(enabled = canShowDetails) { showDetails = true }
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1089,17 +1140,43 @@ private fun FilePanePlaceholder(modifier: Modifier = Modifier) {
 @Composable
 private fun MessageList(snapshot: RemoteSnapshot, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
     val cx = LocalRemotePalette.current
-    // Keep tool-result turns in the transcript: they are the desktop's evidence of
-    // what a native tool call returned, while local notices remain hidden.
-    val messages = remember(snapshot.messages) {
-        snapshot.messages.filter { !it.isLocalNotice }
+    val scope = rememberCoroutineScope()
+    val conversationId = snapshot.activeConversationId
+    val conversationActions = "conversationActions" in snapshot.capabilities
+    var olderMessages by remember { mutableStateOf<List<RemoteMessage>>(emptyList()) }
+    var pageHasMore by remember { mutableStateOf<Boolean?>(null) }
+    var loadingHistory by remember { mutableStateOf(false) }
+    var historyFailed by remember { mutableStateOf(false) }
+    var revealCompacted by remember { mutableStateOf(false) }
+    var previousRecent by remember { mutableStateOf(snapshot.messages) }
+    LaunchedEffect(snapshot.messages, snapshot.isEditingMessage) {
+        if (snapshot.isEditingMessage) {
+            olderMessages = emptyList()
+            pageHasMore = null
+        } else if (olderMessages.isNotEmpty()) {
+            val firstId = snapshot.messages.firstOrNull()?.id
+            val overlap = previousRecent.indexOfFirst { it.id == firstId }
+            if (overlap > 0) {
+                olderMessages = (olderMessages + previousRecent.take(overlap)).distinctBy { it.id }
+            }
+        }
+        previousRecent = snapshot.messages
     }
+    val messages = remember(olderMessages, snapshot.messages, conversationActions) {
+        val recentIds = snapshot.messages.mapTo(hashSetOf()) { it.id }
+        val combined = olderMessages.filterNot { it.id in recentIds } + snapshot.messages
+        if (conversationActions) combined else combined.filterNot { it.isLocalNotice }
+    }
+    val lastSummary = messages.indexOfLast { it.isSummary }
+    val visibleMessages = if (!revealCompacted && lastSummary > 0) messages.drop(lastSummary) else messages
     val extraQuestion = snapshot.question?.takeIf { question -> messages.none { it.id == question.id } }
     val streamingLen = snapshot.streamingContent?.length ?: 0
-    val itemCount = messages.size + (if (snapshot.isStreaming) 1 else 0) + (if (extraQuestion != null) 1 else 0)
+    val hasOlder = conversationActions && conversationId != null && (pageHasMore ?: snapshot.hasOlderMessages) && messages.isNotEmpty()
+    val itemCount = visibleMessages.size + (if (snapshot.isStreaming) 1 else 0) + (if (extraQuestion != null) 1 else 0) +
+        (if (hasOlder) 1 else 0) + (if (lastSummary > 0) 1 else 0)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (itemCount - 1).coerceAtLeast(0))
 
-    LaunchedEffect(messages.size, streamingLen, snapshot.isStreaming) {
+    LaunchedEffect(snapshot.messages.lastOrNull()?.id, streamingLen, snapshot.isStreaming) {
         if (itemCount <= 0) return@LaunchedEffect
         val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
         if (lastVisible >= itemCount - 2) listState.animateScrollToItem(itemCount - 1)
@@ -1117,9 +1194,32 @@ private fun MessageList(snapshot: RemoteSnapshot, viewModel: RemoteViewModel, mo
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 8.dp),
     ) {
-        items(messages, key = { it.id }) { message ->
+        if (hasOlder && conversationId != null) item(key = "__older__") {
+            TextButton(enabled = !loadingHistory && !snapshot.isEditingMessage, onClick = {
+                val beforeId = messages.first().id
+                loadingHistory = true
+                historyFailed = false
+                scope.launch {
+                    val result = viewModel.conversationHistory(conversationId, beforeId)
+                    loadingHistory = false
+                    val current = viewModel.state.value.snapshot
+                    if (result != null && current != null && current.activeConversationId == conversationId && !current.isEditingMessage) {
+                        olderMessages = (result.messages + olderMessages).distinctBy { it.id }
+                        pageHasMore = result.hasOlderMessages
+                    } else {
+                        historyFailed = true
+                    }
+                }
+            }) { Text(stringResource(if (historyFailed) R.string.remote_retry_history else R.string.remote_load_history)) }
+        }
+        if (lastSummary > 0) item(key = "__compacted__") {
+            TextButton(onClick = { revealCompacted = !revealCompacted }) {
+                Text(stringResource(if (revealCompacted) R.string.remote_hide_compacted else R.string.remote_show_compacted, lastSummary))
+            }
+        }
+        items(visibleMessages, key = { it.id }) { message ->
             val question = snapshot.question?.takeIf { it.id == message.id }
-            if (question != null) RemoteQuestionCard(question, viewModel) else MessageRow(message)
+            if (question != null) RemoteQuestionCard(question, viewModel) else MessageRow(message, snapshot, viewModel)
         }
         if (extraQuestion != null) item(key = "__question__${extraQuestion.id}") { RemoteQuestionCard(extraQuestion, viewModel) }
         if (snapshot.isStreaming) {
@@ -1129,25 +1229,46 @@ private fun MessageList(snapshot: RemoteSnapshot, viewModel: RemoteViewModel, mo
 }
 
 @Composable
-private fun MessageRow(message: RemoteMessage) {
+private fun MessageRow(message: RemoteMessage, snapshot: RemoteSnapshot, viewModel: RemoteViewModel) {
     val cx = LocalRemotePalette.current
-    if (message.role == "user") {
+    val clipboard = LocalClipboardManager.current
+    val conversationId = snapshot.activeConversationId
+    if (message.role == "user" && !message.isToolResult) {
         val maxBubble = (LocalConfiguration.current.screenWidthDp * 0.82f).dp
         val shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 4.dp, bottomStart = 16.dp)
+        val canChange = conversationId != null && "conversationActions" in snapshot.capabilities && !message.isLocalNotice
+        val enabled = !snapshot.isEditingMessage && snapshot.installLabel == null
+        var changing by remember { mutableStateOf<Boolean?>(null) }
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.End) {
-            Box(
-                modifier = Modifier
-                    .widthIn(max = maxBubble)
-                    .clip(shape)
-                    .background(cx.bg2)
-                    .border(1.dp, cx.border, shape)
-                    .padding(horizontal = 13.dp, vertical = 9.dp),
-            ) {
-                Text(message.content, color = cx.text, style = RemoteType.bodyLarge)
+            Column(Modifier.widthIn(max = maxBubble), horizontalAlignment = Alignment.End) {
+                Column(
+                    modifier = Modifier.clip(shape).background(cx.bg2).border(1.dp, cx.border, shape)
+                        .padding(horizontal = 13.dp, vertical = 9.dp),
+                ) {
+                    if (message.content.isNotEmpty()) Text(message.content, color = cx.text, style = RemoteType.bodyLarge)
+                    RemoteMessageImages(message, conversationId, viewModel)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (message.content.isNotEmpty()) IconButton(onClick = { clipboard.setText(AnnotatedString(message.content)) }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.ContentCopy, stringResource(R.string.remote_copy), tint = cx.muted, modifier = Modifier.size(14.dp))
+                    }
+                    if (canChange && (message.content.isNotBlank() || message.imageCount > 0)) {
+                        if (message.content.isNotBlank()) {
+                            IconButton(onClick = { changing = false }, enabled = enabled && snapshot.model != null, modifier = Modifier.size(36.dp)) {
+                                Icon(Icons.Filled.Edit, stringResource(R.string.remote_edit), tint = cx.muted, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                        IconButton(onClick = { changing = true }, enabled = enabled, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Filled.Refresh, stringResource(R.string.remote_resend_message), tint = cx.muted, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
             }
         }
+        changing?.let { resend ->
+            if (conversationId != null) RemoteChangeMessageDialog(message, conversationId, resend, viewModel) { changing = null }
+        }
     } else {
-        val clipboard = LocalClipboardManager.current
         val tokensLabel = stringResource(R.string.remote_tokens)
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
             if (message.toolCalls.isNotEmpty()) {
@@ -1155,19 +1276,21 @@ private fun MessageRow(message: RemoteMessage) {
             }
             message.toolName?.takeIf { it.isNotBlank() }?.let { ToolStatusLine(it, active = false) }
             if (!message.reasoningContent.isNullOrBlank()) {
-                Text(
-                    message.reasoningContent.take(700),
-                    color = cx.faint,
-                    fontStyle = FontStyle.Italic,
-                    style = RemoteType.body,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                )
+                var reasoningOpen by remember { mutableStateOf(false) }
+                TextButton(onClick = { reasoningOpen = !reasoningOpen }) {
+                    Text(stringResource(if (reasoningOpen) R.string.remote_hide_reasoning else R.string.remote_show_reasoning))
+                }
+                if (reasoningOpen) Text(message.reasoningContent, color = cx.muted, fontStyle = FontStyle.Italic,
+                    style = RemoteType.body, modifier = Modifier.padding(bottom = 6.dp))
             }
-            if (message.content.isNotBlank()) RemoteContent(message.content)
-            if (message.isToolResult && message.content.isNotBlank()) {
-                Text("tool result", color = cx.faint, style = RemoteType.monoSmall)
+            if (message.isToolResult) {
+                var expanded by remember { mutableStateOf(false) }
+                TextButton(onClick = { expanded = !expanded }) { Text(stringResource(R.string.remote_tool_result)) }
+                if (expanded && message.content.isNotBlank()) CodeBlock(message.content)
+            } else if (message.content.isNotBlank()) {
+                RemoteContent(message.content)
             }
+            RemoteMessageImages(message, conversationId, viewModel)
             // Footer: copy button + thinking time + token usage.
             Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -1180,6 +1303,9 @@ private fun MessageRow(message: RemoteMessage) {
                 }
                 Spacer(Modifier.weight(1f))
                 val meta = buildList {
+                    message.modelId?.let { id ->
+                        add(snapshot.models.firstOrNull { it.id == id && it.providerId == message.providerId }?.name ?: id)
+                    }
                     message.thinkingTime?.let { if (it > 0) add(formatThinkingMs(it)) }
                     message.tokensUsed?.let { if (it > 0) add("$it $tokensLabel") }
                 }.joinToString("  ·  ")
@@ -1223,7 +1349,13 @@ private fun StreamingRow(snapshot: RemoteSnapshot) {
             snapshot.streamingToolName?.takeIf { it.isNotBlank() }?.let { tool ->
                 ToolStatusLine(tool, active = true)
             }
-            if (snapshot.streamingStatus == "thinking" && !thinking.isNullOrBlank()) {
+            val retry = snapshot.streamingRetry
+            if (retry != null) {
+                Text(
+                    stringResource(R.string.remote_stream_retry, retry.max?.let { "${retry.attempt}/$it" } ?: retry.attempt.toString()),
+                    color = cx.amber, style = RemoteType.bodySmall,
+                )
+            } else if (snapshot.streamingStatus == "thinking" && !thinking.isNullOrBlank()) {
                 Text(
                     thinking.take(700),
                     color = cx.faint,
@@ -1235,7 +1367,7 @@ private fun StreamingRow(snapshot: RemoteSnapshot) {
             }
             val content = snapshot.streamingContent.orEmpty()
             if (content.isNotBlank()) RemoteContent(content)
-            BlinkingCursor()
+            if (retry == null) BlinkingCursor()
         }
     }
 }
@@ -1521,10 +1653,8 @@ private fun ActionButton(text: String, kind: ButtonKind, modifier: Modifier = Mo
 @Composable
 private fun Composer(
     viewModel: RemoteViewModel,
-    rootPath: String?,
-    isStreaming: Boolean,
-    canQueue: Boolean,
-    onSend: (String) -> Unit,
+    snapshot: RemoteSnapshot,
+    onSend: suspend (String, List<String>) -> Boolean,
     onStop: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
@@ -1534,7 +1664,51 @@ private fun Composer(
     var uploading by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
     var showAttach by remember { mutableStateOf(false) }
-    val canSend = text.isNotBlank()
+    var showHandoff by remember { mutableStateOf(false) }
+    var images by remember { mutableStateOf<List<String>>(emptyList()) }
+    var sendFailed by remember { mutableStateOf(false) }
+    var imageFailed by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    val rootPath = snapshot.rootPath
+    val isStreaming = snapshot.isStreaming
+    val canQueue = "queue" in snapshot.capabilities
+    val canAttachImage = "conversationImages" in snapshot.capabilities
+    val canCompact = "conversationActions" in snapshot.capabilities && snapshot.activeConversationId != null &&
+        snapshot.messages.isNotEmpty() && !isStreaming && !snapshot.isEditingMessage && snapshot.installLabel == null
+    val canExport = "conversationActions" in snapshot.capabilities && snapshot.activeConversationId != null &&
+        snapshot.messages.isNotEmpty()
+    val slashName = text.trim().substringBefore(' ').takeIf { it.startsWith("/") }?.drop(1)
+    val knownCommand = snapshot.slashCommands.any { it.name.equals(slashName, ignoreCase = true) }
+    val canSend = (text.isNotBlank() || images.isNotEmpty()) && !uploading && !sending &&
+        !snapshot.isEditingMessage && snapshot.installLabel == null && (snapshot.model != null || knownCommand)
+    val submit = {
+        sending = true
+        sendFailed = false
+        val submittedText = text
+        val submittedImages = images
+        scope.launch {
+            if (onSend(submittedText, submittedImages)) {
+                if (text == submittedText) text = ""
+                images = images.drop(submittedImages.size)
+            } else {
+                sendFailed = true
+            }
+            sending = false
+        }
+        Unit
+    }
+
+    val imageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && images.size < REMOTE_IMAGE_COUNT) {
+            scope.launch {
+                uploading = true
+                imageFailed = false
+                val image = readRemoteImage(context, uri, 4_000_000 - images.sumOf { it.length })
+                if (image == null) imageFailed = true else images = images + image
+                uploading = false
+            }
+        }
+    }
 
     // Upload a phone file to the desktop, then insert its saved path as context.
     val uploadLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -1564,6 +1738,24 @@ private fun Composer(
             .imePadding()
             .padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
     ) {
+        if (!isStreaming) RemoteSlashSuggestions(text, snapshot.slashCommands) { text = it }
+        if (imageFailed || sendFailed) {
+            Text(
+                stringResource(if (imageFailed) R.string.remote_image_unavailable else R.string.remote_message_failed),
+                color = cx.danger, style = RemoteType.bodySmall,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+            )
+        }
+        if (images.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                images.forEachIndexed { index, _ ->
+                    Text(stringResource(R.string.remote_message_image, index + 1), color = cx.muted, style = RemoteType.caption)
+                    IconButton(enabled = !sending, onClick = { images = images.filterIndexed { current, _ -> current != index } }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Close, stringResource(R.string.remote_remove_image), tint = cx.muted, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+        }
         // 桌面在输入框上方显示当前工作目录，这里保持一致。
         rootPath?.let { path ->
             Row(
@@ -1597,7 +1789,7 @@ private fun Composer(
                         .size(36.dp)
                         .clip(CircleShape)
                         .background(cx.bg3)
-                        .clickable { showAttach = true },
+                        .clickable(enabled = !uploading && !sending) { showAttach = true },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (uploading) {
@@ -1607,6 +1799,14 @@ private fun Composer(
                     }
                 }
                 RemoteDropdownMenu(expanded = showAttach, onDismissRequest = { showAttach = false }, containerColor = cx.bg2) {
+                    if (canAttachImage) DropdownMenuItem(
+                        text = { Text(stringResource(R.string.remote_attach_image), color = cx.text, style = RemoteType.body) },
+                        enabled = images.size < REMOTE_IMAGE_COUNT,
+                        onClick = {
+                            showAttach = false
+                            imageLauncher.launch("image/*")
+                        },
+                    )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.remote_upload), color = cx.text, style = RemoteType.body) },
                         leadingIcon = { Icon(Icons.Filled.UploadFile, contentDescription = null, tint = cx.muted, modifier = Modifier.size(17.dp)) },
@@ -1623,6 +1823,20 @@ private fun Composer(
                             showPicker = true
                         },
                     )
+                    if (canCompact) DropdownMenuItem(
+                        text = { Text(stringResource(R.string.remote_compact_conversation), color = cx.text, style = RemoteType.body) },
+                        onClick = {
+                            showAttach = false
+                            snapshot.activeConversationId?.let(viewModel::compactConversation)
+                        },
+                    )
+                    if (canExport) DropdownMenuItem(
+                        text = { Text(stringResource(R.string.remote_handoff_export), color = cx.text, style = RemoteType.body) },
+                        onClick = {
+                            showAttach = false
+                            showHandoff = true
+                        },
+                    )
                 }
             }
             Spacer(Modifier.size(4.dp))
@@ -1636,7 +1850,7 @@ private fun Composer(
             )
             Spacer(Modifier.size(6.dp))
             if (isStreaming && canSend && canQueue) {
-                IconButton(onClick = { onSend(text); text = "" }) {
+                IconButton(onClick = submit) {
                     Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.remote_queue_add), tint = cx.accent)
                 }
             }
@@ -1657,8 +1871,7 @@ private fun Composer(
                         if (isStreaming) {
                             onStop()
                         } else {
-                            onSend(text)
-                            text = ""
+                            submit()
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -1678,6 +1891,7 @@ private fun Composer(
     }
 
     if (showPicker) {
+        var selectedRoot by remember(rootPath) { mutableStateOf(rootPath) }
         RemoteDialog(onDismissRequest = { showPicker = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Column(modifier = Modifier.fillMaxSize().background(cx.bg0)) {
                 Row(
@@ -1690,14 +1904,26 @@ private fun Composer(
                     Text(stringResource(R.string.remote_pick_desktop_file), color = cx.text, style = RemoteType.title, fontWeight = FontWeight.SemiBold)
                 }
                 HorizontalDivider(color = cx.border)
+                if (snapshot.workspaceRoots.size > 1) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp)) {
+                        snapshot.workspaceRoots.forEach { root ->
+                            TextButton(onClick = { selectedRoot = root }) {
+                                Text(shortRemotePath(root), color = if (root == selectedRoot) cx.accent else cx.muted)
+                            }
+                        }
+                    }
+                }
                 FileBrowser(
                     viewModel = viewModel,
-                    rootPath = rootPath,
+                    rootPath = selectedRoot,
                     modifier = Modifier.weight(1f),
                     onPick = { p -> text = appendRef(text, p); showPicker = false },
                 )
             }
         }
+    }
+    if (showHandoff) snapshot.activeConversationId?.let { id ->
+        RemoteHandoffDialog(id, viewModel) { showHandoff = false }
     }
 }
 
@@ -1731,6 +1957,7 @@ private fun ModelPickerSheet(
     selectedId: String?,
     selectedProviderId: String?,
     reasoningEffort: String?,
+    showAutoEffort: Boolean,
     onPick: (String, String?) -> Unit,
     onSetEffort: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -1754,6 +1981,10 @@ private fun ModelPickerSheet(
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp),
             )
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                if (showAutoEffort) {
+                    EffortChip("auto", stringResource(R.string.remote_effort_auto), reasoningEffort, Modifier.weight(1f), onSetEffort)
+                    Spacer(Modifier.size(8.dp))
+                }
                 EffortChip("low", stringResource(R.string.remote_effort_low), reasoningEffort, Modifier.weight(1f), onSetEffort)
                 Spacer(Modifier.size(8.dp))
                 EffortChip("medium", stringResource(R.string.remote_effort_medium), reasoningEffort, Modifier.weight(1f), onSetEffort)

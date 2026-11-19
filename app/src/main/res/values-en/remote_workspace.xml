@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_workspace_add_root">Add workspace folder</string>
+    <string name="remote_workspace_absolute_path">Absolute path on desktop</string>
+    <string name="remote_workspace_choose_desktop">Choose on desktop</string>
+    <string name="remote_workspace_close_root">Close workspace folder</string>
+    <string name="remote_workspace_refresh">Refresh</string>
+    <string name="remote_workspace_failed">The operation failed. Check the desktop connection and open workspace.</string>
+    <string name="remote_workspace_exists">The path already exists or overlaps an open workspace folder.</string>
+    <string name="remote_workspace_invalid_name">Enter a valid file name.</string>
+    <string name="remote_workspace_unsaved">The file changed or has unsaved desktop edits. Reopen it and try again.</string>
+    <string name="remote_workspace_file_large">This file is too large to preview or edit remotely.</string>
+    <string name="remote_workspace_new_file">New file</string>
+    <string name="remote_workspace_new_folder">New folder</string>
+    <string name="remote_workspace_file_name">Name</string>
+    <string name="remote_workspace_delete_path">Permanently delete this file or folder?</string>
+    <string name="remote_workspace_search">Find workspace files</string>
+    <string name="remote_workspace_no_matches">No matching files</string>
+    <string name="remote_workspace_search_capped">The search reached its limit. Some results may be missing.</string>
+    <string name="remote_workspace_path_actions">File actions</string>
+    <string name="remote_workspace_copy_path">Copy absolute path</string>
+    <string name="remote_workspace_copy_relative">Copy relative path</string>
+    <string name="remote_git_status">Git</string>
+    <string name="remote_git_no_repo">Open a Git repository first.</string>
+    <string name="remote_git_worktrees">Worktrees</string>
+    <string name="remote_git_uncommitted">Uncommitted</string>
+    <string name="remote_git_base">Base branch</string>
+    <string name="remote_git_commit">Commit</string>
+    <string name="remote_git_revision">Enter a valid Git revision</string>
+    <string name="remote_git_clean">No uncommitted changes</string>
+    <string name="remote_git_dirty">%1$d uncommitted changes</string>
+    <string name="remote_git_diff">View diff</string>
+    <string name="remote_git_review">Start read-only review</string>
+    <string name="remote_git_truncated">Only part of the output is shown.</string>
+    <string name="remote_git_worktree_name">Task name (optional)</string>
+    <string name="remote_git_create_worktree">Create Git worktree</string>
+    <string name="remote_git_remove_worktree">Remove this clean worktree?</string>
+</resources>

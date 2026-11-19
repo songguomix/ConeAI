@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="remote_workspace_add_root">添加工作区文件夹</string>
+    <string name="remote_workspace_absolute_path">电脑上的绝对路径</string>
+    <string name="remote_workspace_choose_desktop">在电脑上选择</string>
+    <string name="remote_workspace_close_root">关闭工作区文件夹</string>
+    <string name="remote_workspace_refresh">刷新</string>
+    <string name="remote_workspace_failed">操作失败。请确认电脑已连接且工作区仍处于打开状态。</string>
+    <string name="remote_workspace_exists">该文件或文件夹已存在，或与已打开的文件夹重叠。</string>
+    <string name="remote_workspace_invalid_name">文件名无效。</string>
+    <string name="remote_workspace_unsaved">文件已更改或电脑上有未保存的编辑。请重新打开文件后再试。</string>
+    <string name="remote_workspace_file_large">文件太大，无法在远控中预览或编辑。</string>
+    <string name="remote_workspace_new_file">新建文件</string>
+    <string name="remote_workspace_new_folder">新建文件夹</string>
+    <string name="remote_workspace_file_name">名称</string>
+    <string name="remote_workspace_delete_path">永久删除此文件或文件夹？</string>
+    <string name="remote_workspace_search">搜索工作区文件</string>
+    <string name="remote_workspace_no_matches">没有匹配的文件</string>
+    <string name="remote_workspace_search_capped">搜索已达到上限，结果可能不完整。</string>
+    <string name="remote_workspace_path_actions">文件操作</string>
+    <string name="remote_workspace_copy_path">复制绝对路径</string>
+    <string name="remote_workspace_copy_relative">复制相对路径</string>
+    <string name="remote_git_status">Git</string>
+    <string name="remote_git_no_repo">请先打开 Git 仓库。</string>
+    <string name="remote_git_worktrees">工作树</string>
+    <string name="remote_git_uncommitted">未提交变更</string>
+    <string name="remote_git_base">基准分支</string>
+    <string name="remote_git_commit">指定提交</string>
+    <string name="remote_git_revision">输入有效的 Git 提交或引用</string>
+    <string name="remote_git_clean">无未提交变更</string>
+    <string name="remote_git_dirty">%1$d 项未提交变更</string>
+    <string name="remote_git_diff">查看差异</string>
+    <string name="remote_git_review">启动只读审查</string>
+    <string name="remote_git_truncated">变更过多，仅显示部分输出。</string>
+    <string name="remote_git_worktree_name">任务名称（可选）</string>
+    <string name="remote_git_create_worktree">创建 Git 工作树</string>
+    <string name="remote_git_remove_worktree">移除此没有未提交变更的工作树？</string>
+</resources>

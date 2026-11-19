@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -95,6 +98,87 @@ class RemoteViewModel @Inject internal constructor(
     fun setReviewMode(value: Boolean) = send(RemoteCommand.SetReviewMode(value))
     fun enqueueMessage(text: String) = send(RemoteCommand.EnqueueMessage(text))
     fun dequeueMessage(id: String) = send(RemoteCommand.DequeueMessage(id))
+    fun steerQueuedMessage(conversationId: String, id: String) = send(RemoteCommand.SteerQueuedMessage(conversationId, id))
+    fun setConversationArchived(id: String, archived: Boolean) = send(RemoteCommand.SetConversationArchived(id, archived))
+    fun continueConversation(conversationId: String) = send(RemoteCommand.ContinueConversation(conversationId))
+    fun compactConversation(conversationId: String) = send(RemoteCommand.CompactConversation(conversationId))
+    fun clearConversationError(conversationId: String?) = send(RemoteCommand.ClearConversationError(conversationId))
+    fun approveConversationPlan(conversationId: String, id: String) = send(RemoteCommand.ApproveConversationPlan(conversationId, id))
+    fun conversationGoal(conversationId: String, action: String, text: String? = null) =
+        send(RemoteCommand.ConversationGoal(conversationId, action, text))
+
+    suspend fun submitConversationMessage(
+        conversationId: String?,
+        text: String,
+        images: List<String>,
+        queue: Boolean,
+    ): Boolean {
+        val result = session.client?.request(
+            if (queue) "enqueueMessage" else "send",
+            mapOf("text" to text),
+            jsonFields = mapOf(
+                "conversationId" to JsonPrimitive(conversationId),
+                "images" to JsonArray(images.map { JsonPrimitive(it) }),
+            ),
+        )
+        return result?.get("ok")?.jsonPrimitive?.booleanOrNull == true
+    }
+
+    suspend fun changeConversationMessage(conversationId: String, id: String, content: String?): Boolean {
+        val fields = buildMap {
+            put("conversationId", conversationId)
+            put("id", id)
+            content?.let { put("text", it) }
+        }
+        val result = session.client?.request(if (content == null) "resendConversationMessage" else "editConversationMessage", fields)
+        return result?.get("ok")?.jsonPrimitive?.booleanOrNull == true
+    }
+
+    suspend fun conversationHistory(conversationId: String, beforeId: String): RemoteHistoryPage? {
+        val result = session.client?.request("conversationHistory", mapOf("conversationId" to conversationId, "beforeId" to beforeId))
+            ?: return null
+        if (result["ok"]?.jsonPrimitive?.booleanOrNull != true) return null
+        return runCatching { RemoteJson.decodeFromJsonElement(RemoteHistoryPage.serializer(), result) }.getOrNull()
+    }
+
+    suspend fun conversationHandoff(conversationId: String, includeTools: Boolean, includeResults: Boolean): RemoteHandoff? {
+        val result = session.client?.request("conversationHandoff", mapOf("conversationId" to conversationId), jsonFields = mapOf(
+            "includeTools" to JsonPrimitive(includeTools), "includeToolResults" to JsonPrimitive(includeResults),
+        )) ?: return null
+        return runCatching { RemoteJson.decodeFromJsonElement(RemoteHandoff.serializer(), result) }.getOrNull()
+    }
+
+    suspend fun checkpointPreview(conversationId: String, changeId: String): RemoteCheckpointPreview? {
+        val result = session.client?.request("conversationCheckpoint", mapOf(
+            "action" to "preview", "conversationId" to conversationId, "id" to changeId,
+        )) ?: return null
+        return runCatching { RemoteJson.decodeFromJsonElement(RemoteCheckpointPreview.serializer(), result) }
+            .getOrNull()?.takeIf { it.ok }
+    }
+
+    suspend fun restoreCheckpoint(conversationId: String, changeId: String, revision: String): String? =
+        conversationChangeRequest("conversationCheckpoint", mapOf(
+            "action" to "restore", "conversationId" to conversationId, "id" to changeId, "revision" to revision,
+        ))
+
+    suspend fun undoConversationChange(conversationId: String, changeId: String): String? =
+        conversationChangeRequest("undoConversationChange", mapOf("conversationId" to conversationId, "id" to changeId))
+
+    private suspend fun conversationChangeRequest(type: String, fields: Map<String, String>): String? {
+        val result = session.client?.request(type, fields, timeoutMs = 120_000L)
+        return if (result?.get("ok")?.jsonPrimitive?.booleanOrNull == true) null
+        else result?.get("error")?.jsonPrimitive?.contentOrNull.orEmpty()
+    }
+
+    suspend fun conversationImage(conversationId: String, id: String, index: Int): String? {
+        val result = session.client?.request(
+            "conversationImage",
+            mapOf("conversationId" to conversationId, "id" to id),
+            jsonFields = mapOf("index" to JsonPrimitive(index)),
+        ) ?: return null
+        if (result["ok"]?.jsonPrimitive?.booleanOrNull != true) return null
+        return result["dataUrl"]?.jsonPrimitive?.contentOrNull
+    }
 
     suspend fun answerQuestion(question: RemoteQuestion, text: String): Boolean {
         val reply = session.client?.request("answerQuestion", mapOf(
@@ -147,6 +231,10 @@ class RemoteViewModel @Inject internal constructor(
     fun rejectAll() = send(RemoteCommand.RejectAll)
 
     // ---- File browser / editor / terminal (request → reply) ----
+
+    internal suspend fun workspaceRequest(action: String, fields: Map<String, String> = emptyMap()): JsonObject? =
+        session.client?.request("workspaceControl", fields + ("action" to action),
+            timeoutMs = if (action == "workspaceAddRoot" && "path" !in fields) 90_000L else 30_000L)
 
     suspend fun listDir(path: String): List<RemoteEntry> {
         val reply = session.client?.request("listDir", mapOf("path" to path)) ?: return emptyList()
@@ -214,4 +302,19 @@ class RemoteViewModel @Inject internal constructor(
      * user switches tabs, instead of being cancelled with the composition.
      */
     fun launchSession(block: suspend CoroutineScope.() -> Unit): Job = session.launch(block)
+
+    internal suspend fun featureRequest(type: String, fields: Map<String, String>, values: Map<String, JsonElement> = emptyMap()): JsonObject? =
+        session.client?.request(type, fields, jsonFields = values)
+    internal suspend fun settingsRequest(
+        fields: Map<String, String>,
+        values: kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap()),
+    ): RemoteSettingsReply? {
+        val active = session.client ?: return null
+        val reply = active.request("remoteSettings", fields, timeoutMs = 180_000L, jsonFields = mapOf("values" to values))
+            ?: return null
+        return runCatching {
+            RemoteJson.decodeFromJsonElement(RemoteSettingsReply.serializer(), reply)
+        }.getOrNull()
+    }
+
 }

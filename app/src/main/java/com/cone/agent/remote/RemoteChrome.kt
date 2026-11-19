@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -41,12 +42,13 @@ internal fun MirrorHeader(
     onPickModel: () -> Unit,
     showWorkbenchTabs: Boolean,
     onScreen: () -> Unit,
+    onMore: () -> Unit,
 ) {
     val cx = LocalRemotePalette.current
     Column(Modifier.fillMaxWidth().background(cx.bg1).statusBarsPadding()) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val narrow = maxWidth < 420.dp
-            val modelMax = if (narrow) (maxWidth - if (insecure) 112.dp else 88.dp).coerceIn(64.dp, 180.dp) else 180.dp
+            val modelMax = if (narrow) (maxWidth - if (insecure) 152.dp else 128.dp).coerceIn(56.dp, 180.dp) else 180.dp
             Column {
                 Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
@@ -69,6 +71,11 @@ internal fun MirrorHeader(
                     IconButton(onClick = onScreen, modifier = Modifier.size(44.dp)) {
                         Icon(Icons.Filled.Computer, stringResource(R.string.remote_desktop),
                             tint = if (tab == RemoteTab.SCREEN) cx.accent else cx.muted, modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = onMore, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Filled.MoreHoriz, stringResource(R.string.remote_more),
+                            tint = if (tab == RemoteTab.MORE) cx.accent else cx.muted,
+                            modifier = Modifier.size(20.dp))
                     }
                 }
                 if (narrow) Text(title, color = cx.muted, style = RemoteType.bodySmall,
@@ -104,7 +111,7 @@ private fun WorkbenchTabStrip(tab: RemoteTab, changeCount: Int, onTab: (RemoteTa
         val equalWidth = maxWidth < 420.dp
         val showIcons = maxWidth >= 320.dp
         Row(Modifier.fillMaxWidth()) {
-            RemoteTab.entries.filter { it != RemoteTab.SCREEN }.forEach { entry ->
+            RemoteTab.entries.filter { it != RemoteTab.SCREEN && it != RemoteTab.MORE }.forEach { entry ->
                 val selected = tab == entry
                 Column((if (equalWidth) Modifier.weight(1f) else Modifier.width(88.dp))
                     .height(42.dp).clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
